@@ -4,7 +4,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Greenfield. The repo contains only `requirely.md` (the product spec) — no source, dependencies, build, or test tooling yet. Add a Commands section here the moment tooling lands; never document commands that don't exist.
+Scaffolded (Phase 0 of `~/.claude/plans/polymorphic-gathering-crown.md`). Config, tooling, and the boundary gates exist; the domain model, engine, adapters, and CLI do not yet. Add commands to the section below as they land; never document a command that doesn't exist.
+
+## Commands
+
+```bash
+pnpm verify        # typecheck + lint + boundaries + test — the gate CI runs
+pnpm typecheck     # tsc --noEmit
+pnpm lint          # biome check .        (pnpm lint:fix to apply)
+pnpm boundaries    # architectural boundary check (see below)
+pnpm test          # vitest run           (pnpm test:watch to watch)
+pnpm vitest run src/config/env.test.ts    # a single test file
+docker compose up -d   # Postgres, once storage lands in Phase 3
+```
+
+## Toolchain constraints worth knowing before writing code
+
+- **Node 24 runs `.ts` directly** via type stripping, so relative imports must carry the `.ts` extension (`import { x } from './x.ts'`).
+- **Only erasable TypeScript compiles** (`erasableSyntaxOnly`): no `enum`, no constructor parameter properties, no `namespace`. Use `as const` objects with a derived union type instead of `enum`, and assign class fields in the constructor body.
+- `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess` are on. Optional fields that can genuinely be absent are declared `foo: T | undefined`, not `foo?: T`.
+
+## Enforced architectural boundaries
+
+Two gates enforce the provider-agnostic constraint, because a rule that lives only in prose decays silently:
+
+- `pnpm boundaries` (`scripts/check-boundaries.sh`) — the CI gate. Covers all four rules, including "domain may only import `zod` and `node:` builtins", which is an allowlist Biome can't express.
+- Biome `noRestrictedImports`, scoped per-directory in `biome.json` `overrides` — the editor gate, for feedback while typing.
+
+The rules: `domain/` imports no outer layer and no third-party package but `zod`; `engine/` imports neither `adapters/` nor `app/`; **`ai` and `@ai-sdk/*` may only be imported under `src/adapters/ai/`**.
+
+Note on `biome.json`: later `overrides` entries *replace* earlier ones for the same rule rather than merging, so each override repeats the AI-SDK patterns. Reordering or de-duplicating them will silently disable enforcement — verify with a deliberate violation after any change.
 
 ## Product
 
@@ -22,14 +51,16 @@ Consequences to hold when designing anything:
 
 - **Understanding is the durable artifact.** Output formats are projections over it. State must never end up living inside the SRS/prompt generator.
 - **Sufficiency is an explicit step.** Each iteration answers "do I have enough to confidently describe what needs to be built?" — that judgement should be an inspectable decision, not an emergent side effect of prompt wording.
-- **Questions carry generated answer options** (lowest-effort path) and always accept a custom answer (highest-flexibility path).
+- **Questions carry generated answer options** (the lowest-effort path), with some allowing a single option selection and others allowing multiple selections. All questions also accept a custom answer (the highest-flexibility path).
 - **The output target is optional and late-binding.** A user may declare it upfront ("write an SRS") or pick it after dumping context. Ingestion and analysis must work without knowing the target.
 - **Input modality is a mechanism, not an identity.** Voice is a priority input, but nothing below the ingestion boundary may be voice-shaped.
 - Ask only the questions needed to reach sufficiency — question volume is a cost, not a feature.
 
+Think of it as Claude Code Plan Mode but **on steroids**.
+
 ## Hard constraint: provider-agnostic AI
 
-No single AI provider may be baked in. Define clean interfaces per capability (e.g. text generation, structured/JSON output, transcription) and implement swappable per-provider adapters behind them. Different layers may use different providers simultaneously — transcription from one vendor, reasoning from another. Provider SDK types and vendor-specific concepts must not leak into domain or orchestration code.
+The application core is AI provider agnostic. The architecture does not constraint or mandate any provider. The architecture should allow use of different providers at different layers of the application simultaneously and naturally. E.g. transcription from one vendor, reasoning from another. Provider SDK types and vendor-specific concepts must not leak into domain or orchestration code.
 
 ## Initial scope
 

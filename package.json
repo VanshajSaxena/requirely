@@ -1,0 +1,29 @@
+{
+  "name": "requirely",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turns unstructured input into a structured understanding of what needs to be built.",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "boundaries": "./scripts/check-boundaries.sh",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm test"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.8",
+    "@types/node": "^24.10.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

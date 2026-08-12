@@ -1,0 +1,26 @@
+# Postgres for local development and integration tests.
+#
+# Image note: this is the pgvector build rather than stock postgres. The extension
+# is not enabled in v1, but starting here means adding retrieval later is a
+# migration rather than an image swap and data reload.
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: requirely-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: requirely
+      POSTGRES_PASSWORD: requirely
+      POSTGRES_DB: requirely
+    ports:
+      - "5432:5432"
+    volumes:
+      - requirely-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U requirely -d requirely"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  requirely-pgdata:
