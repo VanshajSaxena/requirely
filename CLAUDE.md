@@ -4,7 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Scaffolded (Phase 0 of `~/.claude/plans/polymorphic-gathering-crown.md`). Config, tooling, and the boundary gates exist; the domain model, engine, adapters, and CLI do not yet. Add commands to the section below as they land; never document a command that doesn't exist.
+Phases 0–1 of `~/.claude/plans/polymorphic-gathering-crown.md` are done: tooling, boundary gates, and the full domain model (entities, Zod schemas, all ports, three pure functions). The engine, adapters, storage, projections, and CLI do not exist yet. Add commands to the section below as they land; never document a command that doesn't exist.
+
+## Domain model orientation
+
+`src/domain/` has no I/O and depends on nothing but `zod`. Three pure functions carry the logic:
+
+| Function | Location | Contract |
+|---|---|---|
+| `applyDelta` | `understanding/apply-delta.ts` | Merges a turn's changes into the next `Understanding`. All-or-nothing: unknown IDs throw `UnknownReferenceError` rather than being skipped. |
+| `decideSufficiency` | `sufficiency/policy.ts` | Turns the model's coverage assessment into a verdict via `SufficiencyPolicy`. The model supplies evidence; this supplies the decision. |
+| `validateAnswer` | `inquiry/validate-answer.ts` | Relational checks an `Answer` schema cannot express, since each needs the `Question`. |
+
+Load-bearing conventions, each with a test pinning it:
+
+- **Nullable, not optional.** Absent values are `null`, because the domain is stored as JSONB and `undefined` disappears on serialization. `round-trip.test.ts` asserts this for every entity.
+- **Drafts vs entities.** A model emits `*Draft` (no `id`, no timestamps); the domain assigns identity via `IdGenerator`. Drafts are derived with `.omit({ id: true })` so they cannot drift from the entity.
+- **`.prefault()`, not `.default()`, for nested objects.** Zod's `.default()` returns its argument *without parsing it*, so `.default({})` yields a bare `{}` and skips every inner default. `.prefault({})` parses first.
+- **Revisions strip defaults.** `patchOf()` in `understanding/delta.ts` — `.partial()` alone leaves `.default()` intact, so a revision naming one field would silently overwrite the others with their defaults.
+- **Unmentioned means unchanged; `null` means cleared.** `stripUndefined` in `apply-delta.ts` enforces this.
 
 ## Commands
 
@@ -31,7 +49,9 @@ Two gates enforce the provider-agnostic constraint, because a rule that lives on
 - `pnpm boundaries` (`scripts/check-boundaries.sh`) — the CI gate. Covers all four rules, including "domain may only import `zod` and `node:` builtins", which is an allowlist Biome can't express.
 - Biome `noRestrictedImports`, scoped per-directory in `biome.json` `overrides` — the editor gate, for feedback while typing.
 
-The rules: `domain/` imports no outer layer and no third-party package but `zod`; `engine/` imports neither `adapters/` nor `app/`; **`ai` and `@ai-sdk/*` may only be imported under `src/adapters/ai/`**.
+The rules: `domain/` imports no outer layer and no third-party package but `zod` (test files may add `vitest`); `engine/` imports neither `adapters/` nor `app/`; **`ai` and `@ai-sdk/*` may only be imported under `src/adapters/ai/`**; and `Date.now()`, `new Date()`, `crypto.randomUUID()`, `Math.random()` appear nowhere in `domain/` or `engine/` — time and identity enter only through the `Clock` and `IdGenerator` ports.
+
+After changing the script, re-prove it by planting deliberate violations and confirming each rule fires. An earlier version matched the word "from" inside comments and template literals; false positives are how a checker gets switched off.
 
 Note on `biome.json`: later `overrides` entries *replace* earlier ones for the same rule rather than merging, so each override repeats the AI-SDK patterns. Reordering or de-duplicating them will silently disable enforcement — verify with a deliberate violation after any change.
 
