@@ -67,7 +67,7 @@ report "engine/ must not import adapters or app" \
 
 # Rule 4 is the provider-agnostic constraint as an executable assertion.
 ai_leaks=""
-for dir in src/domain src/engine src/ingestion src/projection src/app src/config; do
+for dir in src/domain src/engine src/ingestion src/projection src/app src/config src/integration; do
   ai_leaks+="$(find_imports "$dir" '(ai|@ai-sdk/.*)')"$'\n'
 done
 for dir in src/adapters/*/; do

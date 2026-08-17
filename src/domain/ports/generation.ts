@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Operation } from '../shared/operation.ts';
 import type { Usage } from '../shared/usage.ts';
 
 /**
@@ -14,6 +15,12 @@ export const Effort = z.enum(['low', 'medium', 'high']);
 export type Effort = z.infer<typeof Effort>;
 
 export interface GenerationRequest {
+  /**
+   * Which engine step this call serves. Required, not optional: it is what makes
+   * spend attributable per step and what lets an adapter route models per
+   * operation. An unnamed call is one you cannot account for later.
+   */
+  readonly operation: Operation;
   /** Stable, role-defining context. Adapters may cache on this prefix. */
   readonly instructions: string;
   /** The volatile part of the call. */

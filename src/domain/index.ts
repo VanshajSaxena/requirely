@@ -7,6 +7,7 @@
  */
 
 export * from './inquiry/answer.ts';
+export * from './inquiry/drafts.ts';
 export * from './inquiry/question.ts';
 export * from './inquiry/validate-answer.ts';
 export * from './ports/clock.ts';
@@ -21,6 +22,7 @@ export * from './ports/transcriber.ts';
 export * from './session/session.ts';
 export * from './shared/errors.ts';
 export * from './shared/ids.ts';
+export * from './shared/operation.ts';
 export * from './shared/provenance.ts';
 export * from './shared/time.ts';
 export * from './shared/usage.ts';

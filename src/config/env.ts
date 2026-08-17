@@ -11,9 +11,11 @@ import { z } from 'zod';
 
 const ReasoningProvider = z.enum(['anthropic', 'openai', 'fake']);
 const TranscriptionProvider = z.enum(['openai', 'fake']);
+const TurnStrategy = z.enum(['separate', 'merged']);
 
 export type ReasoningProvider = z.infer<typeof ReasoningProvider>;
 export type TranscriptionProvider = z.infer<typeof TranscriptionProvider>;
+export type TurnStrategy = z.infer<typeof TurnStrategy>;
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -31,6 +33,21 @@ const EnvSchema = z.object({
   REQUIRELY_TRANSCRIPTION_MODEL: z.string().min(1).default('whisper-1'),
 
   REQUIRELY_QUESTION_BUDGET: z.coerce.number().int().positive().default(12),
+
+  /**
+   * `separate` scores the understanding the domain actually stored (3 calls per
+   * turn). `merged` folds analyze and assess into one call, sending the
+   * understanding once — roughly a third fewer tokens, at the cost of scoring a
+   * predicted merge rather than the real one. Both exist so the trade can be
+   * measured on a fixture session instead of argued about.
+   */
+  REQUIRELY_TURN_STRATEGY: TurnStrategy.default('separate'),
+
+  /**
+   * A turn that asks everything at once is a questionnaire, not a loop. The
+   * budget is the session total; this caps a single round.
+   */
+  REQUIRELY_MAX_QUESTIONS_PER_TURN: z.coerce.number().int().positive().default(4),
 });
 
 export interface AppConfig {
@@ -38,6 +55,8 @@ export interface AppConfig {
   readonly logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
   readonly databaseUrl: string | undefined;
   readonly questionBudget: number;
+  readonly maxQuestionsPerTurn: number;
+  readonly turnStrategy: TurnStrategy;
   readonly reasoning: { readonly provider: ReasoningProvider; readonly model: string };
   readonly transcription: { readonly provider: TranscriptionProvider; readonly model: string };
   readonly credentials: {
@@ -90,6 +109,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: env.LOG_LEVEL,
     databaseUrl: env.DATABASE_URL,
     questionBudget: env.REQUIRELY_QUESTION_BUDGET,
+    maxQuestionsPerTurn: env.REQUIRELY_MAX_QUESTIONS_PER_TURN,
+    turnStrategy: env.REQUIRELY_TURN_STRATEGY,
     reasoning: {
       provider: env.REQUIRELY_REASONING_PROVIDER,
       model: env.REQUIRELY_REASONING_MODEL,

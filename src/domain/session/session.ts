@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { Clock } from '../ports/clock.ts';
+import type { IdGenerator } from '../ports/id-generator.ts';
 import { SessionStateError } from '../shared/errors.ts';
 import { RevisionId, SessionId } from '../shared/ids.ts';
 import { Timestamp } from '../shared/time.ts';
@@ -40,16 +42,60 @@ export const Session = z.object({
 export type Session = z.infer<typeof Session>;
 
 /**
- * Every terminal state can return to `gathering`: a user who adds a new document
- * to a finalized session is starting the loop again, not corrupting it.
+ * Any of these four is a legitimate outcome of running a turn, from any state —
+ * including a finalized session the user reopened by adding a new document.
+ */
+const TURN_OUTCOMES = ['gathering', 'awaiting-answers', 'sufficient', 'exhausted'] as const;
+
+/**
+ * There is really only one rule here: **you cannot finalize what you have not
+ * assessed.** `finalized` is reachable only from `sufficient` or `exhausted`,
+ * because both of those carry a recorded verdict explaining the state of the
+ * understanding — and a generated document with no verdict behind it is exactly
+ * the "confident output hiding its holes" this design exists to prevent.
+ *
+ * Everything else is permitted, so this table is deliberately permissive rather
+ * than ceremonial. An earlier version forbade `awaiting-answers → sufficient`,
+ * which is the single most common transition in the entire loop.
  */
 const LEGAL_TRANSITIONS: Record<SessionStatus, readonly SessionStatus[]> = {
-  gathering: ['awaiting-answers', 'sufficient', 'exhausted'],
-  'awaiting-answers': ['gathering', 'exhausted'],
-  sufficient: ['finalized', 'gathering'],
-  exhausted: ['finalized', 'gathering'],
-  finalized: ['gathering'],
+  gathering: TURN_OUTCOMES,
+  'awaiting-answers': TURN_OUTCOMES,
+  sufficient: [...TURN_OUTCOMES, 'finalized'],
+  exhausted: [...TURN_OUTCOMES, 'finalized'],
+  finalized: TURN_OUTCOMES,
 };
+
+export interface CreateSessionInput {
+  readonly questionBudget: number;
+  readonly title?: string | undefined;
+  readonly outputTarget?: OutputTarget | undefined;
+}
+
+/**
+ * A new session starts in `gathering` with no revision and nothing asked.
+ *
+ * `outputTarget` is optional here on purpose — the spec allows the user to
+ * declare it up front or decide after dumping context, and nothing in ingestion
+ * or analysis may depend on knowing it.
+ */
+export function createSession(
+  input: CreateSessionInput,
+  ctx: { readonly ids: IdGenerator; readonly clock: Clock },
+): Session {
+  const now = ctx.clock.now();
+  return Session.parse({
+    id: SessionId.parse(ctx.ids.next('session')),
+    title: input.title ?? null,
+    status: 'gathering',
+    outputTarget: input.outputTarget ?? null,
+    questionBudget: input.questionBudget,
+    questionsAsked: 0,
+    currentRevisionId: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 export function canTransition(from: SessionStatus, to: SessionStatus): boolean {
   return LEGAL_TRANSITIONS[from].includes(to);

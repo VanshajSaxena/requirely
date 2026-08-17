@@ -51,7 +51,6 @@ const revision = UnderstandingRevision.parse({
         id: 'req_1',
         statement: 'Users sign in via SSO',
         kind: 'functional',
-        confidence: 0.8,
         provenance: [{ sourceId: 'src_1', quote: 'we use Okta' }],
       },
     ],
@@ -140,8 +139,8 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
     UnderstandingDelta.parse({
       product: { name: 'Requirely' },
       requirements: {
-        add: [{ statement: 'Export to PDF', kind: 'functional', confidence: 0.5 }],
-        revise: [{ id: 'req_1', confidence: 0.95, reason: 'confirmed' }],
+        add: [{ statement: 'Export to PDF', kind: 'functional' }],
+        revise: [{ id: 'req_1', priority: 'must', reason: 'confirmed' }],
         remove: [{ id: 'req_2', reason: 'contradicted' }],
       },
       gaps: { resolve: [{ id: 'gap_1', resolvedByAnswerId: 'ans_1', resolution: 'answered' }] },

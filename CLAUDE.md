@@ -12,25 +12,47 @@ The owner intends to hack this codebase directly, redirect its architecture, and
 - **Be honest about weaknesses.** Flag the parts most likely to need rework and say why. Do not present a design as more settled than it is.
 - **Prefer teaching the pattern over hiding it.** When something is deliberately explicit or repetitive, explain the invariant that repetition protects.
 
+Do this after completing a single unit of work in-line in the Chat.
+
 ## Status
 
-Phases 0–1 of `~/.claude/plans/polymorphic-gathering-crown.md` are done: tooling, boundary gates, and the full domain model (entities, Zod schemas, all ports, three pure functions). The engine, adapters, storage, projections, and CLI do not exist yet. Add commands to the section below as they land; never document a command that doesn't exist.
+Phases 0–2 of `~/.claude/plans/polymorphic-gathering-crown.md` are done: tooling, boundary gates, the domain model, and the engine loop running end to end on a fake adapter. **No provider package is installed** — that is deliberate, and it is the evidence the ports hold. Postgres storage, real AI adapters, PDF/audio ingestion, projections, and the CLI do not exist yet. Add commands below as they land; never document a command that doesn't exist.
+
+## Engine orientation
+
+`runTurn` in `engine/loop.ts` is one iteration of the loop. Per turn:
+
+1. `validateAnswer` on every answer — **before any model call**, so a malformed answer costs nothing
+2. the configured strategy produces `{ understanding, delta, assessment, usage[] }`
+3. `decideSufficiency` → verdict → session becomes `sufficient`, `exhausted`, or `awaiting-answers`
+4. one `Turn` recorded with inputs, before/after revision ids, verdict, and per-operation usage
+
+Load-bearing details:
+
+- **`engine/context.ts` is the only place a model's input is assembled.** Token optimization (windowing, summarization, `Embedder` retrieval) lands there and nowhere else.
+- **Two strategies, `REQUIRELY_TURN_STRATEGY`.** `separate` (3 calls) assesses the stored understanding; `merged` (2 calls) assesses a predicted one. The saving is exactly the compact projection's size per turn. An integration test asserts both reach the same outcome.
+- **`merge` is passed _into_ strategies** rather than returning a delta to apply. Applying twice would draw two ID sequences from one `IdGenerator`; the callback makes that unexpressible, and a runtime guard catches it anyway.
+- **Unknown IDs are handled asymmetrically on purpose.** `applyDelta` throws on a bad ID (one retry). `resolveBlockingGaps` and `selectQuestions` silently drop them, because a hallucinated blocking gap would veto sufficiency forever and deadlock the session.
+- **Question ordering comes from `verdict.shortfalls`**, not a model-supplied priority — the same reasoning that removed `Requirement.confidence`.
+- **The fake adapter validates scripted responses against the real schema.** A fixture that drifts fails exactly as a bad model response would.
+
+Tests that wire adapters to the engine live in `src/integration/`, not `src/engine/` — the boundary rule forbids `engine/ → adapters/` with no test exemption.
 
 ## Domain model orientation
 
 `src/domain/` has no I/O and depends on nothing but `zod`. Three pure functions carry the logic:
 
-| Function | Location | Contract |
-|---|---|---|
-| `applyDelta` | `understanding/apply-delta.ts` | Merges a turn's changes into the next `Understanding`. All-or-nothing: unknown IDs throw `UnknownReferenceError` rather than being skipped. |
-| `decideSufficiency` | `sufficiency/policy.ts` | Turns the model's coverage assessment into a verdict via `SufficiencyPolicy`. The model supplies evidence; this supplies the decision. |
-| `validateAnswer` | `inquiry/validate-answer.ts` | Relational checks an `Answer` schema cannot express, since each needs the `Question`. |
+| Function            | Location                       | Contract                                                                                                                                    |
+| ------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `applyDelta`        | `understanding/apply-delta.ts` | Merges a turn's changes into the next `Understanding`. All-or-nothing: unknown IDs throw `UnknownReferenceError` rather than being skipped. |
+| `decideSufficiency` | `sufficiency/policy.ts`        | Turns the model's coverage assessment into a verdict via `SufficiencyPolicy`. The model supplies evidence; this supplies the decision.      |
+| `validateAnswer`    | `inquiry/validate-answer.ts`   | Relational checks an `Answer` schema cannot express, since each needs the `Question`.                                                       |
 
 Load-bearing conventions, each with a test pinning it:
 
 - **Nullable, not optional.** Absent values are `null`, because the domain is stored as JSONB and `undefined` disappears on serialization. `round-trip.test.ts` asserts this for every entity.
 - **Drafts vs entities.** A model emits `*Draft` (no `id`, no timestamps); the domain assigns identity via `IdGenerator`. Drafts are derived with `.omit({ id: true })` so they cannot drift from the entity.
-- **`.prefault()`, not `.default()`, for nested objects.** Zod's `.default()` returns its argument *without parsing it*, so `.default({})` yields a bare `{}` and skips every inner default. `.prefault({})` parses first.
+- **`.prefault()`, not `.default()`, for nested objects.** Zod's `.default()` returns its argument _without parsing it_, so `.default({})` yields a bare `{}` and skips every inner default. `.prefault({})` parses first.
 - **Revisions strip defaults.** `patchOf()` in `understanding/delta.ts` — `.partial()` alone leaves `.default()` intact, so a revision naming one field would silently overwrite the others with their defaults.
 - **Unmentioned means unchanged; `null` means cleared.** `stripUndefined` in `apply-delta.ts` enforces this.
 
@@ -63,7 +85,7 @@ The rules: `domain/` imports no outer layer and no third-party package but `zod`
 
 After changing the script, re-prove it by planting deliberate violations and confirming each rule fires. An earlier version matched the word "from" inside comments and template literals; false positives are how a checker gets switched off.
 
-Note on `biome.json`: later `overrides` entries *replace* earlier ones for the same rule rather than merging, so each override repeats the AI-SDK patterns. Reordering or de-duplicating them will silently disable enforcement — verify with a deliberate violation after any change.
+Note on `biome.json`: later `overrides` entries _replace_ earlier ones for the same rule rather than merging, so each override repeats the AI-SDK patterns. Reordering or de-duplicating them will silently disable enforcement — verify with a deliberate violation after any change.
 
 ## Product
 

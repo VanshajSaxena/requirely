@@ -14,6 +14,23 @@ export const QuestionOption = z.object({
 });
 export type QuestionOption = z.infer<typeof QuestionOption>;
 
+/**
+ * Zero options means a genuinely open question; two or more offer the low-effort
+ * path. Exactly one is rejected: a single option is not a choice, it is a
+ * leading question.
+ *
+ * Factored out so the entity and the draft enforce the same rule from one
+ * definition — the draft is what a model emits, and it is precisely there that
+ * the rule needs to hold.
+ */
+export const optionListRule = <T extends z.ZodType>(option: T) =>
+  z
+    .array(option)
+    .refine((options) => options.length !== 1, {
+      message: 'A question must offer either no options or at least two.',
+    })
+    .default([]);
+
 export const Question = z.object({
   id: QuestionId,
   sessionId: SessionId,
@@ -22,17 +39,7 @@ export const Question = z.object({
   gapId: GapId,
   text: z.string().min(1),
   mode: AnswerMode,
-  /**
-   * Zero options means a genuinely open question; two or more offer the
-   * low-effort path. Exactly one is rejected: a single option is not a choice,
-   * it is a leading question.
-   */
-  options: z
-    .array(QuestionOption)
-    .refine((options) => options.length !== 1, {
-      message: 'A question must offer either no options or at least two.',
-    })
-    .default([]),
+  options: optionListRule(QuestionOption),
   /**
    * Always true, encoded in the type. The highest-flexibility path is a product
    * invariant, so it must not be possible to construct a question that forbids

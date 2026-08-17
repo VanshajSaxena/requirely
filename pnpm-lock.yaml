@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -527,6 +530,10 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
+  uuid@14.0.1:
+    resolution: {integrity: sha512-6ZxzVpzDXDa3bJWaHilVayA+BH/1zmxCJoVgvmqJnid/gPoKHxUrS/aC/T6LGQtNHT+XHG9fXPJB4d+IrU30Ew==}
+    hasBin: true
+
   vite@8.2.1:
     resolution: {integrity: sha512-EU/eS7BH3XROHh2YnBefjM6DBKA6ZeMZEYQbj7NLWg5wHYlhB8B/Mayd5XsgWq+NFYccDOTemRpdETWR6Ka/lw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -975,6 +982,8 @@ snapshots:
       '@typescript/typescript-win32-x64': 7.0.2
 
   undici-types@7.18.2: {}
+
+  uuid@14.0.1: {}
 
   vite@8.2.1(@types/node@24.13.3):
     dependencies:

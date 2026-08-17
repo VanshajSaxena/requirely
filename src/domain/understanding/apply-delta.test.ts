@@ -11,7 +11,6 @@ const delta = (input: unknown): UnderstandingDelta => UnderstandingDelta.parse(i
 const requirementDraft = (statement: string, overrides: Record<string, unknown> = {}) => ({
   statement,
   kind: 'functional',
-  confidence: 0.8,
   provenance: [{ sourceId: 'src_1', quote: 'from the transcript' }],
   ...overrides,
 });
@@ -66,13 +65,13 @@ describe('applyDelta — revisions', () => {
       before,
       delta({
         requirements: {
-          revise: [{ id: 'req_1', confidence: 0.95, reason: 'confirmed by the answer to Q1' }],
+          revise: [{ id: 'req_1', priority: 'must', reason: 'confirmed by the answer to Q1' }],
         },
       }),
       ctx(),
     );
 
-    expect(after.requirements[0]?.confidence).toBe(0.95);
+    expect(after.requirements[0]?.priority).toBe('must');
     // Untouched fields must survive — this is the whole point of deltas over
     // regeneration, and the thing full-rewrite would silently lose.
     expect(after.requirements[0]?.statement).toBe('Users sign in via SSO');

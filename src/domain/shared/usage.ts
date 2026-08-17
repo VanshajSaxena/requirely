@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OperationSchema } from './operation.ts';
 
 /**
  * Every port returns usage. Capturing it at the capability boundary rather than
@@ -9,6 +10,8 @@ import { z } from 'zod';
  * JSONB — `null` survives a JSON round-trip, `undefined` does not.
  */
 export const Usage = z.object({
+  /** Which engine step spent this. Null for calls made outside a named operation. */
+  operation: OperationSchema.nullable().default(null),
   provider: z.string().min(1),
   model: z.string().min(1),
   inputTokens: z.number().int().nonnegative(),

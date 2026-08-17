@@ -42,8 +42,6 @@ export const Requirement = z.object({
   statement: z.string().min(1),
   kind: RequirementKind,
   priority: Priority.nullable().default(null),
-  /** How sure the system is, given current sources. Drives which gaps matter. */
-  confidence: z.number().min(0).max(1),
   rationale: z.string().min(1).nullable().default(null),
   provenance: z.array(Provenance).default([]),
 });
