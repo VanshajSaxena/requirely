@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Standing goal: build the owner's understanding, not just the code
+
+The owner intends to hack this codebase directly, redirect its architecture, and learn the design process — not to receive a black box. So, alongside working code:
+
+- **Explain the reasoning, not just the result.** When a non-obvious choice is made, say what was traded away and what the alternative would have cost. A decision the owner can't reconstruct is one they can't safely change.
+- **Name the load-bearing parts.** Be explicit about which lines hold an invariant and which are incidental, so refactoring doesn't quietly break something.
+- **Surface sharp edges as they're found** — library traps, silent-failure modes, false-positive-prone checks — and record them here or in a code comment. These are the things that cost hours later.
+- **Be honest about weaknesses.** Flag the parts most likely to need rework and say why. Do not present a design as more settled than it is.
+- **Prefer teaching the pattern over hiding it.** When something is deliberately explicit or repetitive, explain the invariant that repetition protects.
+
 ## Status
 
 Phases 0–1 of `~/.claude/plans/polymorphic-gathering-crown.md` are done: tooling, boundary gates, and the full domain model (entities, Zod schemas, all ports, three pure functions). The engine, adapters, storage, projections, and CLI do not exist yet. Add commands to the section below as they land; never document a command that doesn't exist.
