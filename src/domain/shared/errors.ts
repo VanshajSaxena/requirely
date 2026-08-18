@@ -32,6 +32,27 @@ export class UnknownReferenceError extends DomainError {
   }
 }
 
+/**
+ * The IdGenerator produced an id that is already in use.
+ *
+ * Distinct from `UnknownReferenceError`: that one means the model referenced
+ * something that does not exist, this one means the *infrastructure* handed back
+ * a colliding id. Different cause, different fix.
+ */
+export class DuplicateIdError extends DomainError {
+  readonly collection: string;
+  readonly id: string;
+
+  constructor(collection: string, id: string) {
+    super(
+      'DUPLICATE_ID',
+      `IdGenerator produced "${id}", which is already used by another ${collection}.`,
+    );
+    this.collection = collection;
+    this.id = id;
+  }
+}
+
 export class InvalidAnswerError extends DomainError {
   readonly reason: string;
 

@@ -21,6 +21,7 @@ import {
   type SufficiencyPolicy,
   type SufficiencyVerdict,
   type Turn,
+  TurnCommit,
   TurnId,
   type TurnTrigger,
   type Understanding,
@@ -52,12 +53,8 @@ export interface TurnRequest {
   readonly answers?: readonly Answer[];
 }
 
-export interface TurnResult {
-  readonly session: Session;
-  readonly revision: UnderstandingRevision;
-  readonly turn: Turn;
-  readonly questions: readonly Question[];
-}
+// `runTurn` returns a TurnCommit rather than a bespoke result type: what the
+// caller wants to inspect and what needs persisting are the same thing.
 
 /**
  * Reconciles the model's opinion about blocking gaps with what actually exists.
@@ -157,12 +154,10 @@ export async function runTurn(
   session: Session,
   request: TurnRequest,
   deps: EngineDeps,
-): Promise<TurnResult> {
+): Promise<TurnCommit> {
   const startedAt = deps.clock.now();
 
   const answered = await resolveAnswers(deps, request.answers ?? []);
-  for (const { answer } of answered) await deps.inquiry.addAnswer(answer);
-
   const newSources = await loadSources(deps.sources, request.sourceIds ?? []);
   const previous = await deps.revisions.findLatest(session.id);
   const current = previous?.content ?? emptyUnderstanding();
@@ -195,15 +190,19 @@ export async function runTurn(
     { questionsAsked: session.questionsAsked, questionBudget: session.questionBudget },
   );
 
+  // Each turn appends exactly one revision, so this number is also the turn's
+  // index. Deriving it once removes both a repository read and a way for the
+  // two sequences to disagree.
+  const revisionNumber = (previous?.revision ?? -1) + 1;
+
   const revision = UnderstandingRevision.parse({
     id: RevisionId.parse(deps.ids.next('revision')),
     sessionId: session.id,
-    revision: (previous?.revision ?? -1) + 1,
+    revision: revisionNumber,
     producedByTurnId: turnId,
     content: understanding,
     createdAt: startedAt,
   });
-  await deps.revisions.append(revision);
 
   const usage = [...analysis.usage];
   let questions: Question[] = [];
@@ -230,7 +229,6 @@ export async function runTurn(
     }
 
     questions = materializeQuestions(selected, { sessionId: session.id, turnId }, deps);
-    await deps.inquiry.addQuestions(questions);
     status = 'awaiting-answers';
   }
 
@@ -243,7 +241,7 @@ export async function runTurn(
   const turn: Turn = {
     id: turnId,
     sessionId: session.id,
-    index: (await deps.sessions.listTurns(session.id)).length,
+    index: revisionNumber,
     trigger: request.trigger,
     inputSourceIds: newSources.map((source) => source.id),
     inputAnswerIds: answered.map(({ answer }) => answer.id),
@@ -254,7 +252,6 @@ export async function runTurn(
     startedAt,
     completedAt,
   };
-  await deps.sessions.appendTurn(turn);
 
   const nextSession: Session = {
     ...session,
@@ -263,7 +260,14 @@ export async function runTurn(
     currentRevisionId: revision.id,
     updatedAt: completedAt,
   };
-  await deps.sessions.save(nextSession);
 
-  return { session: nextSession, revision, turn, questions };
+  // Parsing here runs the command's cross-field checks, so an engine bug that
+  // produced an incoherent turn fails now rather than becoming a data problem.
+  return TurnCommit.parse({
+    session: nextSession,
+    revision,
+    turn,
+    questions,
+    answers: answered.map(({ answer }) => answer),
+  });
 }

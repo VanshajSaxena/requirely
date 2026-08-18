@@ -11,13 +11,23 @@ import {
   type Question,
   type Session,
   type SourceId,
+  type TurnCommit,
+  type TurnCommitter,
 } from '../domain/index.ts';
 // Test doubles are intentionally absent from the domain's public index, so they
 // can never arrive in production code by accident.
 import { fixedClock, sequentialIdGenerator } from '../domain/testing/fakes.ts';
-import { type EngineDeps, runTurn } from '../engine/loop.ts';
+import { type EngineDeps, runTurn, type TurnRequest } from '../engine/loop.ts';
 import { STRATEGIES, type StrategyName } from '../engine/strategies.ts';
 import { ingestText } from '../ingestion/text.ts';
+import {
+  answerAll,
+  coverage,
+  SOURCE_TEXT,
+  scriptFor,
+  TURN_1_ASSESSMENT,
+  TURN_1_DELTA,
+} from './scenario.ts';
 
 /**
  * The whole loop, end to end, with no provider package installed.
@@ -28,127 +38,19 @@ import { ingestText } from '../ingestion/text.ts';
  * before they have been minted.
  */
 
-const coverage = (base: number, overrides: Partial<Record<CoverageDimension, number>> = {}) =>
-  ALL_COVERAGE_DIMENSIONS.map((dimension) => ({
-    dimension,
-    score: overrides[dimension] ?? base,
-    rationale: `${dimension}: scripted`,
-  }));
-
-const TURN_1_DELTA = {
-  product: { name: 'Requirely', purpose: 'Gather software requirements faster' },
-  requirements: {
-    add: [
-      {
-        statement: 'Ingest audio, text and documents into one understanding',
-        kind: 'functional',
-        provenance: [{ sourceId: 'src_1', quote: 'dump everything you know' }],
-      },
-    ],
-  },
-  gaps: {
-    add: [
-      {
-        dimension: 'acceptance',
-        topic: 'done criteria',
-        description: 'Nothing states how anyone would know this worked.',
-        blocking: false,
-        impact: 'high',
-      },
-      {
-        dimension: 'users',
-        topic: 'audience',
-        description: 'Who this serves is unstated.',
-        blocking: false,
-        impact: 'medium',
-      },
-    ],
-  },
-};
-
-const TURN_1_ASSESSMENT = {
-  summary: 'Purpose is clear; audience and acceptance are not.',
-  blockingGapIds: [],
-  coverage: coverage(0.85, { acceptance: 0.2, users: 0.3 }),
-};
-
-const TURN_1_QUESTIONS = {
-  questions: [
-    {
-      gapId: 'gap_1',
-      text: 'How would you know Requirely had worked?',
-      mode: 'single',
-      options: [
-        { label: 'A spec an engineer can build from unaided' },
-        { label: 'Fewer clarification rounds before work starts' },
-      ],
-    },
-    {
-      gapId: 'gap_2',
-      text: 'Who is the primary user?',
-      mode: 'multiple',
-      options: [{ label: 'Product managers' }, { label: 'Engineers' }, { label: 'Founders' }],
-    },
-  ],
-};
-
-const TURN_2_DELTA = {
-  requirements: {
-    add: [
-      {
-        statement: 'Produce a specification an engineer can build from unaided',
-        kind: 'acceptance',
-      },
-    ],
-  },
-  gaps: {
-    resolve: [
-      {
-        id: 'gap_1',
-        resolvedByAnswerId: 'ans_1',
-        resolution: 'A spec buildable without follow-up.',
-      },
-      { id: 'gap_2', resolvedByAnswerId: 'ans_2', resolution: 'Product managers and founders.' },
-    ],
-  },
-};
-
-const TURN_2_ASSESSMENT = {
-  summary: 'Everything required is now covered.',
-  blockingGapIds: [],
-  coverage: coverage(0.9),
-};
-
-/** The same scenario expressed for whichever strategy is under test. */
-function scriptFor(strategy: StrategyName): FakeScript {
-  if (strategy === 'merged') {
-    return {
-      'analyze-and-assess': [
-        { delta: TURN_1_DELTA, assessment: TURN_1_ASSESSMENT },
-        { delta: TURN_2_DELTA, assessment: TURN_2_ASSESSMENT },
-      ],
-      'generate-questions': [TURN_1_QUESTIONS],
-    };
-  }
-  return {
-    analyze: [TURN_1_DELTA, TURN_2_DELTA],
-    assess: [TURN_1_ASSESSMENT, TURN_2_ASSESSMENT],
-    'generate-questions': [TURN_1_QUESTIONS],
-  };
-}
-
 function harness(strategy: StrategyName = 'separate', script?: FakeScript) {
   const ids = sequentialIdGenerator();
   const clock = fixedClock('2026-01-01T00:00:00.000Z');
   const stores = inMemoryStores();
   const generator = fakeStructuredGenerator(script ?? scriptFor(strategy));
 
-  const deps: EngineDeps = {
+  const deps: EngineDeps & { committer: TurnCommitter } = {
     generator,
     sessions: stores.sessions,
     sources: stores.sources,
     revisions: stores.understanding,
     inquiry: stores.inquiry,
+    committer: stores.committer,
     clock,
     ids,
     policy: DEFAULT_SUFFICIENCY_POLICY,
@@ -157,6 +59,23 @@ function harness(strategy: StrategyName = 'separate', script?: FakeScript) {
   };
 
   return { deps, generator, ids, clock, stores };
+}
+
+/**
+ * The two steps, kept visibly separate.
+ *
+ * `runTurn` reads, calls models, and returns a command; committing is a distinct
+ * act. Tests that expect a turn to *fail* call `runTurn` directly and assert
+ * nothing was written — which is only meaningful because these are two steps.
+ */
+async function runAndCommit(
+  session: Session,
+  request: TurnRequest,
+  deps: EngineDeps & { committer: TurnCommitter },
+): Promise<TurnCommit> {
+  const commit = await runTurn(session, request, deps);
+  await deps.committer.commit(commit);
+  return commit;
 }
 
 async function seedSession(
@@ -170,7 +89,7 @@ async function seedSession(
     {
       sessionId: session.id,
       label: 'kickoff notes',
-      text: 'I want a tool where you dump everything you know about a product and it asks you what is missing.',
+      text: SOURCE_TEXT,
     },
     h.deps,
   );
@@ -179,24 +98,16 @@ async function seedSession(
   return { session, sourceId: source.id };
 }
 
-/** Answers every question by picking its first option. */
-function answerAll(questions: readonly Question[]): Answer[] {
-  return questions.map((question, index) =>
-    Answer.parse({
-      id: `ans_${index + 1}`,
-      questionId: question.id,
-      selectedOptionIds: question.options[0] ? [question.options[0].id] : [],
-      answeredAt: '2026-01-01T00:00:00.000Z',
-    }),
-  );
-}
-
 describe('runTurn — the gathering loop', () => {
   it('turn 1 builds an understanding, finds gaps, and asks about them', async () => {
     const h = harness();
     const { session, sourceId } = await seedSession(h);
 
-    const result = await runTurn(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
+    const result = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
 
     expect(result.session.status).toBe('awaiting-answers');
     expect(result.revision.revision).toBe(0);
@@ -215,7 +126,7 @@ describe('runTurn — the gathering loop', () => {
     const h = harness();
     const { session, sourceId } = await seedSession(h);
 
-    const { questions } = await runTurn(
+    const { questions } = await runAndCommit(
       session,
       { trigger: 'initial', sourceIds: [sourceId] },
       h.deps,
@@ -231,8 +142,12 @@ describe('runTurn — the gathering loop', () => {
     const h = harness();
     const { session, sourceId } = await seedSession(h);
 
-    const first = await runTurn(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
-    const second = await runTurn(
+    const first = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
+    const second = await runAndCommit(
       first.session,
       { trigger: 'answers-received', answers: answerAll(first.questions) },
       h.deps,
@@ -252,8 +167,12 @@ describe('runTurn — the gathering loop', () => {
   it('records every revision so the session can be replayed', async () => {
     const h = harness();
     const { session, sourceId } = await seedSession(h);
-    const first = await runTurn(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
-    await runTurn(
+    const first = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
+    await runAndCommit(
       first.session,
       { trigger: 'answers-received', answers: answerAll(first.questions) },
       h.deps,
@@ -271,7 +190,11 @@ describe('runTurn — the gathering loop', () => {
   it('attributes token usage per operation', async () => {
     const h = harness();
     const { session, sourceId } = await seedSession(h);
-    const result = await runTurn(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
+    const result = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
 
     const operations = result.turn.usage.map((u) => u.operation);
     expect(operations).toEqual(['analyze', 'assess', 'generate-questions']);
@@ -283,7 +206,11 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
   it('rejects a malformed answer before making any model call', async () => {
     const h = harness();
     const { session, sourceId } = await seedSession(h);
-    const first = await runTurn(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
+    const first = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
     const callsSoFar = h.generator.calls.length;
 
     const empty = Answer.parse({
@@ -307,7 +234,7 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
     const spent: Session = { ...session, questionsAsked: 1 };
     await h.deps.sessions.save(spent);
 
-    const result = await runTurn(spent, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
+    const result = await runAndCommit(spent, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
 
     expect(result.session.status).toBe('exhausted');
     // Running out of questions must never manufacture sufficiency.
@@ -333,7 +260,11 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
     });
     const { session, sourceId } = await seedSession(h);
 
-    const result = await runTurn(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
+    const result = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
 
     expect(result.questions).toHaveLength(4);
     expect(result.session.questionsAsked).toBe(4);
@@ -354,7 +285,11 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
     });
     const { session, sourceId } = await seedSession(h);
 
-    const result = await runTurn(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
+    const result = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
 
     expect(result.questions).toHaveLength(1);
     expect(result.questions[0]?.gapId).toBe('gap_1');
@@ -369,8 +304,12 @@ describe('turn strategies', () => {
       const h = harness(strategy);
       const { session, sourceId } = await seedSession(h);
 
-      const first = await runTurn(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
-      const second = await runTurn(
+      const first = await runAndCommit(
+        session,
+        { trigger: 'initial', sourceIds: [sourceId] },
+        h.deps,
+      );
+      const second = await runAndCommit(
         first.session,
         { trigger: 'answers-received', answers: answerAll(first.questions) },
         h.deps,

@@ -13,12 +13,20 @@ import type { Timestamp } from '../shared/time.ts';
  * the determinism rule true even here.
  */
 
-/** Produces `req_1`, `req_2`, … per entity kind. Readable in failure output. */
-export function sequentialIdGenerator(): IdGenerator {
+/**
+ * Produces `req_1`, `req_2`, … per entity kind. Readable in failure output, and
+ * predictable enough that fixtures can reference an id before it is minted.
+ *
+ * `start` exists because a real generator never repeats, even across process
+ * restarts. A test that simulates a second process must not hand out `req_1`
+ * again — that models a generator no real implementation would be, and hides
+ * genuine collision handling behind an unrealistic fixture.
+ */
+export function sequentialIdGenerator(start = 1): IdGenerator {
   const counters = new Map<EntityKind, number>();
   return {
     next(kind: EntityKind): string {
-      const next = (counters.get(kind) ?? 0) + 1;
+      const next = (counters.get(kind) ?? start - 1) + 1;
       counters.set(kind, next);
       return `${ID_PREFIX[kind]}_${next}`;
     },

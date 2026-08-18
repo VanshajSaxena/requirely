@@ -1,140 +1,46 @@
-import type {
-  Answer,
-  AnswerId,
-  InquiryRepository,
-  Question,
-  QuestionId,
-  RevisionId,
-  Session,
-  SessionId,
-  SessionRepository,
-  Source,
-  SourceId,
-  SourceRepository,
-  Turn,
-  UnderstandingRepository,
-  UnderstandingRevision,
+import {
+  type Answer,
+  type AnswerId,
+  type InquiryRepository,
+  type Question,
+  type QuestionId,
+  type RevisionId,
+  type Session,
+  type SessionId,
+  type SessionRepository,
+  type Source,
+  type SourceId,
+  type SourceRepository,
+  type Turn,
+  TurnCommit,
+  type TurnCommitter,
+  type UnderstandingRepository,
+  type UnderstandingRevision,
 } from '../../domain/index.ts';
 
 /**
- * In-memory implementations of the four repository ports.
+ * In-memory implementation of every storage port.
  *
- * These exist to run the loop end to end before Postgres arrives, and to prove
- * the port shapes are implementable before Drizzle locks them in.
+ * Two jobs: keep engine tests instant and database-free, and act as the
+ * reference implementation that the Postgres adapter is checked against. Both
+ * are held to the same contract suite in `contract.ts` — two implementations
+ * with separate tests drift; two implementations with one test suite do not.
  *
- * Everything is deep-cloned on the way in and out. That is not paranoia: the
- * real adapter will serialize through JSONB, so shared references would work
- * here and break there. Cloning makes the in-memory adapter fail the same way
- * the real one would, which is the only reason a fake adapter is worth trusting.
+ * Everything is deep-cloned in and out. Not paranoia: the real adapter
+ * serializes through JSONB, so a shared reference would work here and break
+ * there. The fake has to fail the same way the real one will, or trusting it is
+ * a mistake.
  */
 
 const clone = <T>(value: T): T => structuredClone(value);
 
-export function inMemorySessionRepository(): SessionRepository {
-  const sessions = new Map<string, Session>();
-  const turns = new Map<string, Turn[]>();
-
-  return {
-    async create(session) {
-      sessions.set(session.id, clone(session));
-    },
-    async findById(id: SessionId) {
-      const found = sessions.get(id);
-      return found ? clone(found) : null;
-    },
-    async save(session) {
-      sessions.set(session.id, clone(session));
-    },
-    async appendTurn(turn: Turn) {
-      const existing = turns.get(turn.sessionId) ?? [];
-      existing.push(clone(turn));
-      turns.set(turn.sessionId, existing);
-    },
-    async listTurns(sessionId: SessionId) {
-      return (turns.get(sessionId) ?? []).map(clone);
-    },
-  };
-}
-
-export function inMemorySourceRepository(): SourceRepository {
-  const sources = new Map<string, Source>();
-
-  return {
-    async add(source) {
-      sources.set(source.id, clone(source));
-    },
-    async save(source) {
-      sources.set(source.id, clone(source));
-    },
-    async findById(id: SourceId) {
-      const found = sources.get(id);
-      return found ? clone(found) : null;
-    },
-    async listBySession(sessionId: SessionId) {
-      return [...sources.values()].filter((s) => s.sessionId === sessionId).map(clone);
-    },
-  };
-}
-
-export function inMemoryUnderstandingRepository(): UnderstandingRepository {
-  const revisions = new Map<string, UnderstandingRevision>();
-
-  const bySession = (sessionId: SessionId): UnderstandingRevision[] =>
-    [...revisions.values()]
-      .filter((r) => r.sessionId === sessionId)
-      .sort((a, b) => a.revision - b.revision);
-
-  return {
-    async append(revision) {
-      revisions.set(revision.id, clone(revision));
-    },
-    async findById(id: RevisionId) {
-      const found = revisions.get(id);
-      return found ? clone(found) : null;
-    },
-    async findLatest(sessionId: SessionId) {
-      const all = bySession(sessionId);
-      const last = all[all.length - 1];
-      return last ? clone(last) : null;
-    },
-    async listBySession(sessionId: SessionId) {
-      return bySession(sessionId).map(clone);
-    },
-  };
-}
-
-export function inMemoryInquiryRepository(): InquiryRepository {
-  const questions = new Map<string, Question>();
-  const answers = new Map<string, Answer>();
-
-  return {
-    async addQuestions(incoming) {
-      for (const question of incoming) questions.set(question.id, clone(question));
-    },
-    async findQuestion(id: QuestionId) {
-      const found = questions.get(id);
-      return found ? clone(found) : null;
-    },
-    async listUnansweredQuestions(sessionId: SessionId) {
-      const answered = new Set([...answers.values()].map((a) => a.questionId as string));
-      return [...questions.values()]
-        .filter((q) => q.sessionId === sessionId && !answered.has(q.id))
-        .map(clone);
-    },
-    async addAnswer(answer) {
-      answers.set(answer.id, clone(answer));
-    },
-    async findAnswer(id: AnswerId) {
-      const found = answers.get(id);
-      return found ? clone(found) : null;
-    },
-    async listAnswers(sessionId: SessionId) {
-      const sessionQuestions = new Set(
-        [...questions.values()].filter((q) => q.sessionId === sessionId).map((q) => q.id as string),
-      );
-      return [...answers.values()].filter((a) => sessionQuestions.has(a.questionId)).map(clone);
-    },
-  };
+interface Tables {
+  readonly sessions: Map<string, Session>;
+  readonly turns: Map<string, Turn[]>;
+  readonly sources: Map<string, Source>;
+  readonly revisions: Map<string, UnderstandingRevision>;
+  readonly questions: Map<string, Question>;
+  readonly answers: Map<string, Answer>;
 }
 
 export interface MemoryStores {
@@ -142,13 +48,140 @@ export interface MemoryStores {
   readonly sources: SourceRepository;
   readonly understanding: UnderstandingRepository;
   readonly inquiry: InquiryRepository;
+  readonly committer: TurnCommitter;
 }
 
 export function inMemoryStores(): MemoryStores {
-  return {
-    sessions: inMemorySessionRepository(),
-    sources: inMemorySourceRepository(),
-    understanding: inMemoryUnderstandingRepository(),
-    inquiry: inMemoryInquiryRepository(),
+  const db: Tables = {
+    sessions: new Map(),
+    turns: new Map(),
+    sources: new Map(),
+    revisions: new Map(),
+    questions: new Map(),
+    answers: new Map(),
   };
+
+  const revisionsOf = (sessionId: SessionId): UnderstandingRevision[] =>
+    [...db.revisions.values()]
+      .filter((revision) => revision.sessionId === sessionId)
+      .sort((a, b) => a.revision - b.revision);
+
+  const sessions: SessionRepository = {
+    async create(session) {
+      db.sessions.set(session.id, clone(session));
+    },
+    async findById(id: SessionId) {
+      const found = db.sessions.get(id);
+      return found ? clone(found) : null;
+    },
+    async save(session) {
+      db.sessions.set(session.id, clone(session));
+    },
+    async listTurns(sessionId: SessionId) {
+      return (db.turns.get(sessionId) ?? []).map(clone);
+    },
+  };
+
+  const sources: SourceRepository = {
+    async add(source) {
+      db.sources.set(source.id, clone(source));
+    },
+    async save(source) {
+      db.sources.set(source.id, clone(source));
+    },
+    async findById(id: SourceId) {
+      const found = db.sources.get(id);
+      return found ? clone(found) : null;
+    },
+    async listBySession(sessionId: SessionId) {
+      return [...db.sources.values()].filter((s) => s.sessionId === sessionId).map(clone);
+    },
+  };
+
+  const understanding: UnderstandingRepository = {
+    async findById(id: RevisionId) {
+      const found = db.revisions.get(id);
+      return found ? clone(found) : null;
+    },
+    async findLatest(sessionId: SessionId) {
+      const all = revisionsOf(sessionId);
+      const last = all[all.length - 1];
+      return last ? clone(last) : null;
+    },
+    async listBySession(sessionId: SessionId) {
+      return revisionsOf(sessionId).map(clone);
+    },
+  };
+
+  const inquiry: InquiryRepository = {
+    async findQuestion(id: QuestionId) {
+      const found = db.questions.get(id);
+      return found ? clone(found) : null;
+    },
+    async listUnansweredQuestions(sessionId: SessionId) {
+      const answered = new Set([...db.answers.values()].map((a) => a.questionId as string));
+      return [...db.questions.values()]
+        .filter((q) => q.sessionId === sessionId && !answered.has(q.id))
+        .map(clone);
+    },
+    async findAnswer(id: AnswerId) {
+      const found = db.answers.get(id);
+      return found ? clone(found) : null;
+    },
+    async listAnswers(sessionId: SessionId) {
+      const ofSession = new Set(
+        [...db.questions.values()]
+          .filter((q) => q.sessionId === sessionId)
+          .map((q) => q.id as string),
+      );
+      return [...db.answers.values()].filter((a) => ofSession.has(a.questionId)).map(clone);
+    },
+  };
+
+  const committer: TurnCommitter = {
+    async commit(incoming) {
+      const command = TurnCommit.parse(incoming);
+
+      // Postgres enforces these through primary keys and unique indexes. A Map
+      // would happily overwrite instead, which made this adapter *more*
+      // permissive than production — a bug could pass here and fail there.
+      // The shared contract suite caught exactly that, so the constraints are
+      // reproduced by hand.
+      const existingTurns = db.turns.get(command.turn.sessionId) ?? [];
+      const conflicts = [
+        db.revisions.has(command.revision.id) && `revision ${command.revision.id} already exists`,
+        [...db.revisions.values()].some(
+          (r) =>
+            r.sessionId === command.revision.sessionId && r.revision === command.revision.revision,
+        ) && `session already has revision number ${command.revision.revision}`,
+        existingTurns.some((t) => t.id === command.turn.id) &&
+          `turn ${command.turn.id} already exists`,
+        existingTurns.some((t) => t.index === command.turn.index) &&
+          `session already has turn index ${command.turn.index}`,
+        ...command.questions.map(
+          (q) => db.questions.has(q.id) && `question ${q.id} already exists`,
+        ),
+        ...command.answers.map((a) => db.answers.has(a.id) && `answer ${a.id} already exists`),
+      ].filter((conflict): conflict is string => typeof conflict === 'string');
+
+      if (conflicts.length > 0) {
+        throw new Error(`Commit conflicts with stored data: ${conflicts.join('; ')}`);
+      }
+
+      // Everything below is a synchronous Map write, so once the checks above
+      // pass there is no partial-failure path — this adapter's stand-in for a
+      // transaction.
+      db.sessions.set(command.session.id, clone(command.session));
+      db.revisions.set(command.revision.id, clone(command.revision));
+
+      const existing = existingTurns;
+      existing.push(clone(command.turn));
+      db.turns.set(command.turn.sessionId, existing);
+
+      for (const question of command.questions) db.questions.set(question.id, clone(question));
+      for (const answer of command.answers) db.answers.set(answer.id, clone(answer));
+    },
+  };
+
+  return { sessions, sources, understanding, inquiry, committer };
 }

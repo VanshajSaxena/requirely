@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UnknownReferenceError } from '../shared/errors.ts';
+import { DuplicateIdError, UnknownReferenceError } from '../shared/errors.ts';
 import { sequentialIdGenerator } from '../testing/fakes.ts';
 import { applyDelta } from './apply-delta.ts';
 import { UnderstandingDelta } from './delta.ts';
@@ -103,15 +103,39 @@ describe('applyDelta — revisions', () => {
   });
 
   it('keeps ids stable across successive turns', () => {
-    const turn1 = seeded();
+    // One generator across both turns, as a running engine has. An earlier
+    // version of this test built a fresh generator per turn and then asserted
+    // `['req_1', 'req_1']` — documenting an id collision as correct behaviour.
+    const shared = { ids: sequentialIdGenerator() };
+
+    const turn1 = applyDelta(
+      emptyUnderstanding(),
+      delta({ requirements: { add: [requirementDraft('Users sign in via SSO')] } }),
+      shared,
+    );
     const turn2 = applyDelta(
       turn1,
       delta({ requirements: { add: [requirementDraft('Users can revoke a session')] } }),
-      ctx(),
+      shared,
     );
 
-    expect(turn2.requirements.map((r) => r.id)).toEqual(['req_1', 'req_1']);
+    expect(turn2.requirements.map((r) => r.id)).toEqual(['req_1', 'req_2']);
     expect(turn2.requirements[0]?.statement).toBe('Users sign in via SSO');
+  });
+
+  it('refuses to mint an id that a collection already uses', () => {
+    const turn1 = seeded();
+
+    // A generator that restarts hands back `req_1` a second time. Real
+    // generators do not, but the collection's uniqueness must not depend on
+    // that: two requirements sharing an id makes every later revise ambiguous.
+    expect(() =>
+      applyDelta(
+        turn1,
+        delta({ requirements: { add: [requirementDraft('Colliding requirement')] } }),
+        ctx(),
+      ),
+    ).toThrow(DuplicateIdError);
   });
 });
 

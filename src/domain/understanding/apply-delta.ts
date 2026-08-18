@@ -1,5 +1,5 @@
 import type { IdGenerator } from '../ports/id-generator.ts';
-import { UnknownReferenceError } from '../shared/errors.ts';
+import { DuplicateIdError, UnknownReferenceError } from '../shared/errors.ts';
 import {
   AssumptionId,
   ConstraintId,
@@ -75,7 +75,22 @@ function mergeCollection<E extends { readonly id: string }>(
 
   // Insertion order is preserved, so newly added entries land at the end and the
   // sequence stays stable across turns — which is what makes diffs readable.
-  const added = ops.add.map((draft) => ({ ...draft, id: mintId() }) as E);
+  const taken = new Set(byId.keys());
+  const added: E[] = [];
+
+  for (const draft of ops.add) {
+    const id = mintId();
+    // A real IdGenerator never repeats, but leaving the collection's uniqueness
+    // to rest on a component the domain cannot inspect is how you get two
+    // entries sharing an id — which makes every later `revise` ambiguous and
+    // silently picks whichever one the map happened to keep.
+    if (taken.has(id)) {
+      throw new DuplicateIdError(collection, id);
+    }
+    taken.add(id);
+    added.push({ ...draft, id } as E);
+  }
+
   return [...byId.values(), ...added];
 }
 

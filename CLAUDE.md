@@ -16,7 +16,27 @@ Do this after completing a single unit of work in-line in the Chat.
 
 ## Status
 
-Phases 0–2 of `~/.claude/plans/polymorphic-gathering-crown.md` are done: tooling, boundary gates, the domain model, and the engine loop running end to end on a fake adapter. **No provider package is installed** — that is deliberate, and it is the evidence the ports hold. Postgres storage, real AI adapters, PDF/audio ingestion, projections, and the CLI do not exist yet. Add commands below as they land; never document a command that doesn't exist.
+Phases 0–3 of `~/.claude/plans/polymorphic-gathering-crown.md` are done: tooling, boundary gates, the domain model, the engine loop, and Postgres storage with atomic turns. **No provider package is installed** — that is deliberate, and it is the evidence the ports hold. Real AI adapters, PDF/audio ingestion, projections, and the CLI do not exist yet. Add commands below as they land; never document a command that doesn't exist.
+
+## Storage orientation
+
+**`runTurn` does not write.** It reads, calls models, and returns a `TurnCommit` — a Zod-validated domain command (`domain/turn/commit.ts`) carrying the session, revision, turn, questions and answers. Persisting is a separate step:
+
+```ts
+const commit = await runTurn(session, request, deps);
+await stores.committer.commit(commit);
+```
+
+Why: the old loop wrote at five points interleaved with model calls, so a failed call left orphaned answers. Wrapping the loop in a transaction instead would hold a Postgres connection and row locks open across every LLM call. Splitting it keeps the transaction to milliseconds.
+
+Consequences worth knowing:
+
+- **`UnderstandingRepository` and `InquiryRepository` are read-only.** A revision cannot be appended without a turn to justify it — that is now enforced by the types, not by convention.
+- **`TurnCommit` self-validates cross-references** (turn ↔ revision, question → turn, `turn.index === revision.revision`). An engine bug fails at the boundary instead of becoming a data problem.
+- **Both adapters pass one contract suite** (`adapters/storage/storage-contract.ts`). In-memory reproduces Postgres's unique constraints by hand — without that it was silently more permissive, and the suite caught it.
+- **Timestamps are `text`, not `timestamptz`**, so the domain's ISO strings round-trip byte-identically. ISO-8601 UTC sorts correctly as text; SQL date arithmetic needs a `::timestamptz` cast.
+- **Tests use PGlite** (Postgres in WASM, in-process). `docker-compose up -d` is for developing against a real server.
+- `version` exists on `sessions` and is bumped on write but **not enforced**, and deliberately absent from the domain `Session`.
 
 ## Engine orientation
 
@@ -65,8 +85,16 @@ pnpm lint          # biome check .        (pnpm lint:fix to apply)
 pnpm boundaries    # architectural boundary check (see below)
 pnpm test          # vitest run           (pnpm test:watch to watch)
 pnpm vitest run src/config/env.test.ts    # a single test file
-docker compose up -d   # Postgres, once storage lands in Phase 3
+
+pnpm db:generate   # regenerate migrations from schema.ts — review the SQL diff
+pnpm db:migrate    # apply migrations to DATABASE_URL
+pnpm db:studio     # drizzle studio
+docker compose up -d   # Postgres for local development (tests use PGlite instead)
 ```
+
+## Toolchain sharp edges
+
+- **pnpm 11 ignores the `pnpm` field in `package.json`** — settings live in `pnpm-workspace.yaml`, and putting them back in `package.json` only produces a warning. `esbuild` (drizzle-kit's dependency) needs **both** `onlyBuiltDependencies` and `allowBuilds` set there, or `pnpm install` exits non-zero.
 
 ## Toolchain constraints worth knowing before writing code
 

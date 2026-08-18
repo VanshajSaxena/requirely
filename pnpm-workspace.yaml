@@ -1,0 +1,11 @@
+# pnpm 11 moved these settings out of package.json's "pnpm" field; leaving them
+# there is silently ignored with only a warning.
+#
+# drizzle-kit loads its config through esbuild, whose postinstall links a
+# platform-specific binary. pnpm 11 gates that behind BOTH of these keys —
+# `onlyBuiltDependencies` alone leaves `pnpm install` exiting non-zero.
+onlyBuiltDependencies:
+  - esbuild
+
+allowBuilds:
+  esbuild: true

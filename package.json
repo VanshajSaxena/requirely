@@ -13,17 +13,24 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "boundaries": "./scripts/check-boundaries.sh",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm test"
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
     "uuid": "^14.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",
+    "@electric-sql/pglite": "^0.5.5",
     "@types/node": "^24.10.1",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
