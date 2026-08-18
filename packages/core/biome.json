@@ -1,0 +1,80 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
+  "extends": "//",
+  "overrides": [
+    {
+      "includes": ["src/**", "!src/adapters/ai/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "ai": "The AI SDK may only be imported under src/adapters/ai/. Depend on a domain port instead."
+                },
+                "patterns": [
+                  {
+                    "group": ["@ai-sdk/**"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/engine/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "ai": "The AI SDK may only be imported under src/adapters/ai/. Depend on a domain port instead."
+                },
+                "patterns": [
+                  {
+                    "group": ["@ai-sdk/**", "**/adapters/**", "**/app/**"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "ai": "The AI SDK may only be imported under src/adapters/ai/. Depend on a domain port instead."
+                },
+                "patterns": [
+                  {
+                    "group": [
+                      "@ai-sdk/**",
+                      "**/engine/**",
+                      "**/adapters/**",
+                      "**/ingestion/**",
+                      "**/projection/**",
+                      "**/app/**",
+                      "**/config/**"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

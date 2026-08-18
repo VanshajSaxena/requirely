@@ -1,3 +1,7 @@
+packages:
+  - apps/*
+  - packages/*
+
 # pnpm 11 moved these settings out of package.json's "pnpm" field; leaving them
 # there is silently ignored with only a warning.
 #
@@ -9,3 +13,13 @@ onlyBuiltDependencies:
 
 allowBuilds:
   esbuild: true
+
+# drizzle-kit's bin.cjs does a bare `await import("drizzle-orm/version")`, which
+# Node resolves from bin.cjs's own realpath inside .pnpm/ — not from cwd and not
+# from the workspace package that depends on it. As a single-package repo this
+# worked by accident: drizzle-orm was a root dependency, so the upward walk found
+# it. Once it moved into packages/core, root node_modules no longer had it and
+# every drizzle-kit command failed with "Please install latest version of
+# drizzle-orm" — a message that names the wrong problem entirely.
+publicHoistPattern:
+  - drizzle-orm

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  // Strictness ONLY. Nothing here may assume a runtime — no `module`, no `lib`,
+  // no `types`, no `target`, no `include`. A package extending this file is
+  // claiming "I want these errors", not "I run under Node".
+  //
+  // `include` is deliberately absent and must stay absent: in an extended config
+  // it resolves relative to THE FILE IT IS WRITTEN IN, so an `include` here would
+  // mean <repo-root>/src/** for every consumer. Keep it in each leaf tsconfig.
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+
+    // "each file is transformable alone" — true for Node's type stripping and
+    // for SWC/esbuild/Babel alike, so it is genuinely platform-neutral.
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}

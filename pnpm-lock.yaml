@@ -7,6 +7,15 @@ settings:
 importers:
 
   .:
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.5.8
+        version: 2.5.8
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/core:
     dependencies:
       drizzle-orm:
         specifier: ^0.45.2
@@ -21,9 +30,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@biomejs/biome':
-        specifier: ^2.5.8
-        version: 2.5.8
       '@electric-sql/pglite':
         specifier: ^0.5.5
         version: 0.5.5
