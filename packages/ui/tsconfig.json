@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+
+  // The base carries strictness only, so everything platform-shaped is stated here.
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+
+    // The type-level half of "the kit is isomorphic": with no "node" here,
+    // `process`, `Buffer` and node:* are not in scope, so a Node API cannot be
+    // reached for by accident. The boundary script is the other half — remove
+    // either one and the rule survives only in prose.
+    "types": ["react", "react-dom"],
+
+    "allowJs": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "paths": {
+      "@requirely/ui/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
+}

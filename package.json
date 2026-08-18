@@ -8,8 +8,11 @@
     "node": ">=24.12.0"
   },
   "scripts": {
-    "typecheck": "pnpm --filter @requirely/core run typecheck",
-    "boundaries": "pnpm --filter @requirely/core run boundaries",
+    "dev": "pnpm --filter @requirely/web run dev",
+    "build": "pnpm --filter @requirely/web run build",
+    "start": "pnpm --filter @requirely/web run start",
+    "typecheck": "pnpm --filter @requirely/core run typecheck && pnpm --filter @requirely/ui run typecheck && pnpm --filter @requirely/web run typecheck",
+    "boundaries": "pnpm --filter @requirely/core run boundaries && ./scripts/check-frontend-boundaries.sh",
     "test": "pnpm --filter @requirely/core run test",
     "test:watch": "pnpm --filter @requirely/core run test:watch",
     "lint": "biome check .",

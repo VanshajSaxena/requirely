@@ -14,77 +14,48 @@ The owner intends to hack this codebase directly, redirect its architecture, and
 
 Do this after completing a single unit of work in-line in the Chat.
 
-## Status
+## Repository shape
 
-Phases 0–3 of `~/.claude/plans/polymorphic-gathering-crown.md` are done: tooling, boundary gates, the domain model, the engine loop, and Postgres storage with atomic turns. **No provider package is installed** — that is deliberate, and it is the evidence the ports hold. Real AI adapters, PDF/audio ingestion, projections, and the CLI do not exist yet. Add commands below as they land; never document a command that doesn't exist.
+A pnpm workspace. **`apps/` vs `packages/` is not frontend vs backend** — it is *has an
+entry point you deploy* vs *is imported by something else*. The test question for a new
+package is "how many things import this?" One → it can live inside that thing. Two or
+more → it is a library.
 
-## Storage orientation
-
-**`runTurn` does not write.** It reads, calls models, and returns a `TurnCommit` — a Zod-validated domain command (`domain/turn/commit.ts`) carrying the session, revision, turn, questions and answers. Persisting is a separate step:
-
-```ts
-const commit = await runTurn(session, request, deps);
-await stores.committer.commit(commit);
+```
+requirely/
+├── apps/
+│   └── web/          Next.js — the only deployable today
+├── packages/
+│   ├── core/         the engine: domain, loop, adapters, ingestion, config
+│   └── ui/           the design system
+├── docker-compose.yml   Postgres for local development
+├── requirely.md         the product spec — source of truth for scope
+├── tsconfig.base.json   strictness only; no package's runtime assumptions
+└── biome.json           root config; packages nest with {"extends": "//"}
 ```
 
-Why: the old loop wrote at five points interleaved with model calls, so a failed call left orphaned answers. Wrapping the loop in a transaction instead would hold a Postgres connection and row locks open across every LLM call. Splitting it keeps the transaction to milliseconds.
+`packages/core` is **not "the backend"** — it is Requirely's brain. The HTTP server will
+be one mouth and the CLI another; both become `apps/*` wrapping the same library. Calling
+it "backend" would also mislabel its most reusable third: `src/domain/` depends on nothing
+but `zod` and has no `node:` imports, so it is **isomorphic** and safe to bundle into a
+browser. That is what lets `apps/web` share the real `Question`/`Answer` schemas and the
+real `validateAnswer` instead of a hand-maintained copy that drifts.
 
-Consequences worth knowing:
-
-- **`UnderstandingRepository` and `InquiryRepository` are read-only.** A revision cannot be appended without a turn to justify it — that is now enforced by the types, not by convention.
-- **`TurnCommit` self-validates cross-references** (turn ↔ revision, question → turn, `turn.index === revision.revision`). An engine bug fails at the boundary instead of becoming a data problem.
-- **Both adapters pass one contract suite** (`adapters/storage/storage-contract.ts`). In-memory reproduces Postgres's unique constraints by hand — without that it was silently more permissive, and the suite caught it.
-- **Timestamps are `timestamptz(3)`**, converted at the mapper boundary by `toTimestamp`/`fromTimestamp` in `postgres/repositories.ts`. This was `text` at first, justified by "ISO-8601 UTC sorts correctly as text" — which is only true if every writer emits the identical canonical format, and no constraint can enforce that. Measured: text accepts `'not a date'`, orders `'…T23:00:00+05:30' > '…T18:00:00.000Z'` as `true` when the truth is `false`, and needs a `::timestamptz` cast for any temporal predicate — which defeats the index. `precision: 3` pins the column to what `Date.toISOString()` can represent, so lossless round-tripping is a schema guarantee rather than a property that holds only while our code is the sole writer.
-- **Tests use PGlite** (Postgres in WASM, in-process). `docker-compose up -d` is for developing against a real server.
-- `version` exists on `sessions` and is bumped on write but **not enforced**, and deliberately absent from the domain `Session`.
-
-## Engine orientation
-
-`runTurn` in `engine/loop.ts` is one iteration of the loop. Per turn:
-
-1. `validateAnswer` on every answer — **before any model call**, so a malformed answer costs nothing
-2. the configured strategy produces `{ understanding, delta, assessment, usage[] }`
-3. `decideSufficiency` → verdict → session becomes `sufficient`, `exhausted`, or `awaiting-answers`
-4. one `Turn` recorded with inputs, before/after revision ids, verdict, and per-operation usage
-
-Load-bearing details:
-
-- **`engine/context.ts` is the only place a model's input is assembled.** Token optimization (windowing, summarization, `Embedder` retrieval) lands there and nowhere else.
-- **Two strategies, `REQUIRELY_TURN_STRATEGY`.** `separate` (3 calls) assesses the stored understanding; `merged` (2 calls) assesses a predicted one. The saving is exactly the compact projection's size per turn. An integration test asserts both reach the same outcome.
-- **`merge` is passed _into_ strategies** rather than returning a delta to apply. Applying twice would draw two ID sequences from one `IdGenerator`; the callback makes that unexpressible, and a runtime guard catches it anyway.
-- **Unknown IDs are handled asymmetrically on purpose.** `applyDelta` throws on a bad ID (one retry). `resolveBlockingGaps` and `selectQuestions` silently drop them, because a hallucinated blocking gap would veto sufficiency forever and deadlock the session.
-- **Question ordering comes from `verdict.shortfalls`**, not a model-supplied priority — the same reasoning that removed `Requirement.confidence`.
-- **The fake adapter validates scripted responses against the real schema.** A fixture that drifts fails exactly as a bad model response would.
-
-Tests that wire adapters to the engine live in `src/integration/`, not `src/engine/` — the boundary rule forbids `engine/ → adapters/` with no test exemption.
-
-## Domain model orientation
-
-`src/domain/` has no I/O and depends on nothing but `zod`. Three pure functions carry the logic:
-
-| Function            | Location                       | Contract                                                                                                                                    |
-| ------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `applyDelta`        | `understanding/apply-delta.ts` | Merges a turn's changes into the next `Understanding`. All-or-nothing: unknown IDs throw `UnknownReferenceError` rather than being skipped. |
-| `decideSufficiency` | `sufficiency/policy.ts`        | Turns the model's coverage assessment into a verdict via `SufficiencyPolicy`. The model supplies evidence; this supplies the decision.      |
-| `validateAnswer`    | `inquiry/validate-answer.ts`   | Relational checks an `Answer` schema cannot express, since each needs the `Question`.                                                       |
-
-Load-bearing conventions, each with a test pinning it:
-
-- **Nullable, not optional.** Absent values are `null`, because the domain is stored as JSONB and `undefined` disappears on serialization. `round-trip.test.ts` asserts this for every entity.
-- **Drafts vs entities.** A model emits `*Draft` (no `id`, no timestamps); the domain assigns identity via `IdGenerator`. Drafts are derived with `.omit({ id: true })` so they cannot drift from the entity.
-- **`.prefault()`, not `.default()`, for nested objects.** Zod's `.default()` returns its argument _without parsing it_, so `.default({})` yields a bare `{}` and skips every inner default. `.prefault({})` parses first.
-- **Revisions strip defaults.** `patchOf()` in `understanding/delta.ts` — `.partial()` alone leaves `.default()` intact, so a revision naming one field would silently overwrite the others with their defaults.
-- **Unmentioned means unchanged; `null` means cleared.** `stripUndefined` in `apply-delta.ts` enforces this.
+Each package has its own `CLAUDE.md` with what is true inside it. Read the relevant one
+before working there.
 
 ## Commands
 
 ```bash
-pnpm verify        # typecheck + lint + boundaries + test — the gate CI runs
-pnpm typecheck     # tsc --noEmit
-pnpm lint          # biome check .        (pnpm lint:fix to apply)
-pnpm boundaries    # architectural boundary check (see below)
-pnpm test          # vitest run           (pnpm test:watch to watch)
-pnpm vitest run src/config/env.test.ts    # a single test file
+pnpm verify        # typecheck + lint + boundaries + test — the whole gate
+pnpm typecheck     # tsc --noEmit in every package
+pnpm lint          # biome check .   (pnpm lint:fix to apply)
+pnpm boundaries    # both boundary scripts
+pnpm test          # vitest run in packages/core
+
+pnpm dev           # next dev
+pnpm build         # next build
+pnpm start         # serve the build
 
 pnpm db:generate   # regenerate migrations from schema.ts — review the SQL diff
 pnpm db:migrate    # apply migrations to DATABASE_URL
@@ -92,28 +63,73 @@ pnpm db:studio     # drizzle studio
 docker compose up -d   # Postgres for local development (tests use PGlite instead)
 ```
 
+**Root scripts fan out with one explicit `--filter` per package, never `pnpm -r`.**
+Measured on pnpm 11.20.0: `-r run X` fails loudly only when *zero* packages have `X`;
+when some have it and some do not, the rest are **skipped silently with exit 0** — so a
+package could sit outside the gate forever. `--filter <pkg> run <missing>` exits 1.
+Adding a package therefore means editing the `typecheck` line, which makes "is it in the
+gate?" a reviewable diff rather than an emergent property. Never use `--if-present` in
+`verify`.
+
+## Environment
+
+One `.env` at the repo root, next to the `docker-compose.yml` whose credentials
+`DATABASE_URL` must match. `.env.example` documents it.
+
+`apps/web` keeps its own `.env.local` — **not** for tidiness. The frontend has no business
+being able to read `ANTHROPIC_API_KEY`. `NEXT_PUBLIC_` prefixing stops secrets reaching the
+browser, but it does not stop a server component reading one and rendering it. A secret
+absent from the app's environment cannot leak from it.
+
+Caveat recorded in `packages/core/CLAUDE.md`: `loadEnvFile(path = '.env')` resolves against
+`process.cwd()`, so it does **not** find the root file by default from inside a package.
+Entry points should pass an explicit module-relative path. Nothing calls it yet.
+
 ## Toolchain sharp edges
 
-- **pnpm 11 ignores the `pnpm` field in `package.json`** — settings live in `pnpm-workspace.yaml`, and putting them back in `package.json` only produces a warning. `esbuild` (drizzle-kit's dependency) needs **both** `onlyBuiltDependencies` and `allowBuilds` set there, or `pnpm install` exits non-zero.
-
-## Toolchain constraints worth knowing before writing code
-
-- **Node 24 runs `.ts` directly** via type stripping, so relative imports must carry the `.ts` extension (`import { x } from './x.ts'`).
-- **Only erasable TypeScript compiles** (`erasableSyntaxOnly`): no `enum`, no constructor parameter properties, no `namespace`. Use `as const` objects with a derived union type instead of `enum`, and assign class fields in the constructor body.
-- `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess` are on. Optional fields that can genuinely be absent are declared `foo: T | undefined`, not `foo?: T`.
+- **pnpm 11 ignores the `pnpm` field in `package.json`** — settings live in
+  `pnpm-workspace.yaml`, and putting them back in `package.json` only produces a warning.
+  `esbuild` (drizzle-kit's dependency) needs **both** `onlyBuiltDependencies` and
+  `allowBuilds` set there, or `pnpm install` exits non-zero.
+- **`publicHoistPattern: [drizzle-orm]` is load-bearing.** drizzle-kit's `bin.cjs` does a
+  bare `await import("drizzle-orm/version")`, which Node resolves from **bin.cjs's own
+  realpath** inside `.pnpm/` — not from cwd, and not from the workspace package that
+  depends on it. As a single package this worked by accident, because `drizzle-orm` was a
+  root dependency. After the split it failed with *"Please install latest version of
+  drizzle-orm"* — a message that names the wrong problem entirely.
+- **Changing hoist settings makes `pnpm install` want to purge `node_modules`**, which it
+  refuses to do without a TTY. `CI=true pnpm install` in a non-interactive shell — but note
+  `CI=true` also implies `--frozen-lockfile`, so add `--no-frozen-lockfile` when
+  dependencies changed.
+- **Biome nested configs must be `{"extends": "//"}`.** Writing `{"extends": "../../biome.json"}`
+  makes the file a second *root*: discovery breaks and that package's rules silently never
+  run during `pnpm lint`. Note the two different merge semantics — `extends` deep-merges,
+  while `overrides` entries **replace** each other per rule.
+- **Biome rejects unknown rule names in config** rather than ignoring them, which is how a
+  wrong guess gets caught immediately. Tailwind v4's at-rules need
+  `css.parser.tailwindDirectives: true` — a *parser* option, not a lint rule to disable.
+- **Every boundary script must abort, not pass, when its target directories are missing.**
+  Both helpers return silently on a missing directory, so a wrong cwd would otherwise print
+  "Boundary check passed" while checking nothing.
 
 ## Enforced architectural boundaries
 
-Two gates enforce the provider-agnostic constraint, because a rule that lives only in prose decays silently:
+Two scripts, deliberately not one parameterized script — the rule sets are disjoint, and a
+`case "$1"` dispatch would make a typo'd argument a new way to get a silent pass.
 
-- `pnpm boundaries` (`scripts/check-boundaries.sh`) — the CI gate. Covers all four rules, including "domain may only import `zod` and `node:` builtins", which is an allowlist Biome can't express.
-- Biome `noRestrictedImports`, scoped per-directory in `biome.json` `overrides` — the editor gate, for feedback while typing.
+| Script | Covers |
+| --- | --- |
+| `packages/core/scripts/check-boundaries.sh` | hexagonal layering inside core, the zero-third-party allowlist for `domain/`, AI-SDK containment, determinism |
+| `scripts/check-frontend-boundaries.sh` | no server-only deps in the browser graph; `apps/` may reach only `@requirely/core/domain`; `packages/ui` knows no domain, no `apps/`, no `node:` |
 
-The rules: `domain/` imports no outer layer and no third-party package but `zod` (test files may add `vitest`); `engine/` imports neither `adapters/` nor `app/`; **`ai` and `@ai-sdk/*` may only be imported under `src/adapters/ai/`**; and `Date.now()`, `new Date()`, `crypto.randomUUID()`, `Math.random()` appear nowhere in `domain/` or `engine/` — time and identity enter only through the `Clock` and `IdGenerator` ports.
+Both run under `pnpm boundaries`, and both **must fail CI** — a rule that lives only in
+prose decays silently. After changing either, re-prove it by planting deliberate violations
+and confirming each rule fires, including the negative controls.
 
-After changing the script, re-prove it by planting deliberate violations and confirming each rule fires. An earlier version matched the word "from" inside comments and template literals; false positives are how a checker gets switched off.
-
-Note on `biome.json`: later `overrides` entries _replace_ earlier ones for the same rule rather than merging, so each override repeats the AI-SDK patterns. Reordering or de-duplicating them will silently disable enforcement — verify with a deliberate violation after any change.
+The frontend script greps `--include='*.ts' --include='*.tsx'`. `--include` is repeated,
+not merged, and the original core script passed only `*.ts` — invisible while the repo had
+no JSX, but in a React codebase it would make every rule pass vacuously in every `.tsx`
+file. Both scripts now cover both.
 
 ## Product
 

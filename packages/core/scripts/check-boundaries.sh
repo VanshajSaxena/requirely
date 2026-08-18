@@ -14,6 +14,13 @@ cd "$(dirname "$0")/.."
 
 fail=0
 
+# find_imports is silent on a missing directory — correct for src/app, which does
+# not exist yet, but it means a wrong cwd yields "passed" while checking nothing.
+[ -d src/domain ] && [ -d src/engine ] || {
+  printf 'Boundary check aborted: no src/domain and src/engine under %s\n' "$PWD" >&2
+  exit 1
+}
+
 # Matches real module syntax only. An earlier version grepped for `from '` and
 # flagged the word "from" inside comments and template literals — a checker that
 # reports false positives is a checker people switch off.
@@ -24,7 +31,7 @@ IMPORT_LINE='^[[:space:]]*(import|export)[[:space:]].*[[:space:]]from[[:space:]]
 find_imports() {
   local dir="$1" regex="$2"
   [ -d "$dir" ] || return 0
-  grep -rnE "$IMPORT_LINE" "$dir" --include='*.ts' 2>/dev/null |
+  grep -rnE "$IMPORT_LINE" "$dir" --include='*.ts' --include='*.tsx' 2>/dev/null |
     sed -E "s/^([^:]+:[0-9]+):.*[[:space:]]from[[:space:]]*['\"]([^'\"]+)['\"].*$/\1: \2/" |
     grep -E ": ($regex)$" || true
 }
@@ -34,7 +41,7 @@ find_imports() {
 find_in_code() {
   local dir="$1" regex="$2"
   [ -d "$dir" ] || return 0
-  grep -rnE "$regex" "$dir" --include='*.ts' 2>/dev/null |
+  grep -rnE "$regex" "$dir" --include='*.tsx' --include='*.ts' 2>/dev/null |
     grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' || true
 }
 
@@ -54,16 +61,16 @@ report "domain/ must not import an outer layer" \
 # anything but zod and node: builtins.
 report "domain/ may only depend on zod and node: builtins" \
   "$(find_imports src/domain '[^.#].*' |
-      grep -vE '^[^:]*\.test\.ts:' |
+      grep -vE '^[^:]*\.test\.tsx?:' |
       grep -vE ': (zod(/.*)?|node:.*)$' || true)"
 
 report "domain/ test files may only add vitest" \
   "$(find_imports src/domain '[^.#].*' |
-      grep -E '^[^:]*\.test\.ts:' |
+      grep -E '^[^:]*\.test\.tsx?:' |
       grep -vE ': (zod(/.*)?|node:.*|vitest)$' || true)"
 
 report "engine/ must not import adapters or app" \
-  "$(find_imports src/engine '(\.\./)+(adapters|app)(/.*)?')"
+  "$(find_imports src/engine '((\.\./)+|@requirely/core/)(adapters|app)(/.*)?')"
 
 # Rule 4 is the provider-agnostic constraint as an executable assertion.
 ai_leaks=""

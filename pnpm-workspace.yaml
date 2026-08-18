@@ -23,3 +23,6 @@ allowBuilds:
 # drizzle-orm" — a message that names the wrong problem entirely.
 publicHoistPattern:
   - drizzle-orm
+
+minimumReleaseAgeExclude:
+  - lucide-react@1.32.0
