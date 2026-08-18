@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import type {
   QuestionOption,
   SourceOrigin,
@@ -17,13 +17,25 @@ import type {
  * are self-describing in logs and in a model's context window. The UUID part is
  * v7, so they still sort chronologically.
  *
- * **Timestamps are `text`, not `timestamptz`.** The domain's `Timestamp` is an
- * ISO-8601 UTC string and `round-trip.test.ts` asserts every entity survives
- * serialization byte-identically. `timestamptz` returns a `Date` that has to be
- * converted back, which reintroduces exactly the precision question the rest of
- * the codebase avoids. ISO-8601 UTC also sorts correctly as text, so ordering
- * still works; the only cost is a `::timestamptz` cast for SQL-side date
- * arithmetic, which nothing currently does.
+ * **Timestamps are `timestamptz(3)`.** An earlier version used `text` on the
+ * reasoning that the domain holds ISO-8601 strings, so storing them verbatim
+ * avoided a conversion. Measurement overturned that:
+ *
+ * - Text ordering is only correct if *every* writer emits the identical
+ *   canonical format. `'2026-01-01T23:00:00+05:30' > '2026-01-01T18:00:00.000Z'`
+ *   is `true` as text and `false` in reality — and no constraint can stop a
+ *   non-UTC offset being inserted.
+ * - A `text` column accepts `'not a date'`. This file calls the database an
+ *   untrusted boundary; `text` discards the one check Postgres gives for free.
+ * - Any temporal predicate needs `::timestamptz`, and casting a column defeats
+ *   its index. Measured: seq scan on text vs index-only scan on timestamptz for
+ *   the same `WHERE col > now() - interval '7 days'`.
+ *
+ * `precision: 3` is the part worth keeping from the original concern. Postgres
+ * stores microseconds; `Date.toISOString()` represents milliseconds. Pinning the
+ * column to millisecond precision makes lossless round-tripping a schema
+ * guarantee rather than something that merely happens to hold while our code is
+ * the only writer.
  *
  * **Nested domain objects are `jsonb`.** The Understanding is a versioned
  * document, not a set of rows — shredding it into tables would make every
@@ -31,6 +43,12 @@ import type {
  * `$type<T>()` gives insert-time safety; reads are still re-parsed with Zod,
  * because the database is an untrusted boundary exactly like a model is.
  */
+
+/**
+ * Millisecond precision, matching exactly what `Date.toISOString()` can express.
+ * Anything finer would be storable but not representable in the domain.
+ */
+const MILLISECOND_UTC = { withTimezone: true, precision: 3 } as const;
 
 export const sessions = pgTable('sessions', {
   id: text('id').primaryKey(),
@@ -47,8 +65,8 @@ export const sessions = pgTable('sessions', {
    * absent from the domain `Session` — this is a persistence concern.
    */
   version: integer('version').notNull().default(0),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
+  createdAt: timestamp('created_at', MILLISECOND_UTC).notNull(),
+  updatedAt: timestamp('updated_at', MILLISECOND_UTC).notNull(),
 });
 
 export const sources = pgTable('sources', {
@@ -63,7 +81,7 @@ export const sources = pgTable('sources', {
   normalizedText: text('normalized_text'),
   segments: jsonb('segments').$type<TranscriptSegment[] | null>(),
   failureReason: text('failure_reason'),
-  ingestedAt: text('ingested_at').notNull(),
+  ingestedAt: timestamp('ingested_at', MILLISECOND_UTC).notNull(),
 });
 
 export const understandingRevisions = pgTable(
@@ -76,7 +94,7 @@ export const understandingRevisions = pgTable(
     revision: integer('revision').notNull(),
     producedByTurnId: text('produced_by_turn_id'),
     content: jsonb('content').$type<Understanding>().notNull(),
-    createdAt: text('created_at').notNull(),
+    createdAt: timestamp('created_at', MILLISECOND_UTC).notNull(),
   },
   // Makes the append-only sequence the database's problem rather than the
   // application's hope. A duplicate revision number is now impossible.
@@ -98,8 +116,8 @@ export const turns = pgTable(
     understandingAfter: text('understanding_after').notNull(),
     verdict: jsonb('verdict').$type<SufficiencyVerdict>().notNull(),
     usage: jsonb('usage').$type<Usage[]>().notNull(),
-    startedAt: text('started_at').notNull(),
-    completedAt: text('completed_at').notNull(),
+    startedAt: timestamp('started_at', MILLISECOND_UTC).notNull(),
+    completedAt: timestamp('completed_at', MILLISECOND_UTC).notNull(),
   },
   (table) => [uniqueIndex('turns_session_index_key').on(table.sessionId, table.turnIndex)],
 );
@@ -115,7 +133,7 @@ export const questions = pgTable('questions', {
   mode: text('mode').notNull(),
   options: jsonb('options').$type<QuestionOption[]>().notNull(),
   rationale: text('rationale'),
-  askedAt: text('asked_at').notNull(),
+  askedAt: timestamp('asked_at', MILLISECOND_UTC).notNull(),
 });
 
 export const answers = pgTable('answers', {
@@ -126,7 +144,7 @@ export const answers = pgTable('answers', {
   selectedOptionIds: jsonb('selected_option_ids').$type<string[]>().notNull(),
   customText: text('custom_text'),
   additionalContext: text('additional_context'),
-  answeredAt: text('answered_at').notNull(),
+  answeredAt: timestamp('answered_at', MILLISECOND_UTC).notNull(),
 });
 
 // `allowsCustom` is deliberately not a column: the domain pins it to

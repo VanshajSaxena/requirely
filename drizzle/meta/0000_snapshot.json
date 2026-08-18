@@ -1,5 +1,5 @@
 {
-  "id": "f3c179f7-af33-47aa-b4e4-8ee63f402aa4",
+  "id": "85f8bb1a-fdfb-423f-bc15-c77e52e6214b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -40,7 +40,7 @@
         },
         "answered_at": {
           "name": "answered_at",
-          "type": "text",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true
         }
@@ -117,7 +117,7 @@
         },
         "asked_at": {
           "name": "asked_at",
-          "type": "text",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true
         }
@@ -195,13 +195,13 @@
         },
         "created_at": {
           "name": "created_at",
-          "type": "text",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true
         },
         "updated_at": {
           "name": "updated_at",
-          "type": "text",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true
         }
@@ -274,7 +274,7 @@
         },
         "ingested_at": {
           "name": "ingested_at",
-          "type": "text",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true
         }
@@ -363,13 +363,13 @@
         },
         "started_at": {
           "name": "started_at",
-          "type": "text",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true
         },
         "completed_at": {
           "name": "completed_at",
-          "type": "text",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true
         }
@@ -450,7 +450,7 @@
         },
         "created_at": {
           "name": "created_at",
-          "type": "text",
+          "type": "timestamp (3) with time zone",
           "primaryKey": false,
           "notNull": true
         }

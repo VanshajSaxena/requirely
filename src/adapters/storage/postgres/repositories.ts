@@ -13,6 +13,7 @@ import {
   Source,
   type SourceId,
   type SourceRepository,
+  type Timestamp,
   Turn,
   TurnCommit,
   type TurnCommitter,
@@ -53,22 +54,51 @@ type TurnRow = typeof turns.$inferSelect;
 type QuestionRow = typeof questions.$inferSelect;
 type AnswerRow = typeof answers.$inferSelect;
 
+/**
+ * The timestamp boundary, in one place.
+ *
+ * Columns are `timestamptz(3)`, so the driver hands back a `Date` and expects a
+ * `Date`; the domain speaks ISO-8601 strings. Keeping the conversion to two
+ * functions means the next question about representation has exactly one
+ * address, the way `engine/context.ts` is the only place model input is built.
+ *
+ * `new Date()` here is not ambient time — the instant always originates from the
+ * domain's `Clock`. (The determinism boundary rule covers `domain/` and
+ * `engine/` only, which is why this is legal here and nowhere inward.)
+ */
+const toTimestamp = (value: Date): Timestamp => value.toISOString();
+const fromTimestamp = (value: Timestamp): Date => new Date(value);
+
 // `version` is intentionally absent from the domain Session, so it is dropped here.
-const toSession = (row: SessionRow): Session => Session.parse(row);
+const toSession = (row: SessionRow): Session =>
+  Session.parse({
+    ...row,
+    createdAt: toTimestamp(row.createdAt),
+    updatedAt: toTimestamp(row.updatedAt),
+  });
 
-const toSource = (row: SourceRow): Source => Source.parse(row);
+const toSource = (row: SourceRow): Source =>
+  Source.parse({ ...row, ingestedAt: toTimestamp(row.ingestedAt) });
 
-const toRevision = (row: RevisionRow): UnderstandingRevision => UnderstandingRevision.parse(row);
+const toRevision = (row: RevisionRow): UnderstandingRevision =>
+  UnderstandingRevision.parse({ ...row, createdAt: toTimestamp(row.createdAt) });
 
 const toTurn = (row: TurnRow): Turn =>
-  Turn.parse({ ...row, index: row.turnIndex, turnIndex: undefined });
+  Turn.parse({
+    ...row,
+    index: row.turnIndex,
+    turnIndex: undefined,
+    startedAt: toTimestamp(row.startedAt),
+    completedAt: toTimestamp(row.completedAt),
+  });
 
 const toQuestion = (row: QuestionRow): Question =>
   // `allowsCustom` has no column: the domain pins it to `true`, so it is
   // reconstructed rather than stored.
-  Question.parse({ ...row, allowsCustom: true });
+  Question.parse({ ...row, allowsCustom: true, askedAt: toTimestamp(row.askedAt) });
 
-const toAnswer = (row: AnswerRow): Answer => Answer.parse(row);
+const toAnswer = (row: AnswerRow): Answer =>
+  Answer.parse({ ...row, answeredAt: toTimestamp(row.answeredAt) });
 
 const sessionValues = (session: Session) => ({
   id: session.id,
@@ -78,8 +108,8 @@ const sessionValues = (session: Session) => ({
   questionBudget: session.questionBudget,
   questionsAsked: session.questionsAsked,
   currentRevisionId: session.currentRevisionId,
-  createdAt: session.createdAt,
-  updatedAt: session.updatedAt,
+  createdAt: fromTimestamp(session.createdAt),
+  updatedAt: fromTimestamp(session.updatedAt),
 });
 
 const sourceValues = (source: Source) => ({
@@ -92,7 +122,7 @@ const sourceValues = (source: Source) => ({
   normalizedText: source.normalizedText,
   segments: source.segments === null ? null : [...source.segments],
   failureReason: source.failureReason,
-  ingestedAt: source.ingestedAt,
+  ingestedAt: fromTimestamp(source.ingestedAt),
 });
 
 // ---------------------------------------------------------------- repositories
@@ -244,7 +274,7 @@ export function postgresTurnCommitter(db: Database): TurnCommitter {
           revision: command.revision.revision,
           producedByTurnId: command.revision.producedByTurnId,
           content: command.revision.content,
-          createdAt: command.revision.createdAt,
+          createdAt: fromTimestamp(command.revision.createdAt),
         });
 
         await tx.insert(turns).values({
@@ -258,8 +288,8 @@ export function postgresTurnCommitter(db: Database): TurnCommitter {
           understandingAfter: command.turn.understandingAfter,
           verdict: command.turn.verdict,
           usage: [...command.turn.usage],
-          startedAt: command.turn.startedAt,
-          completedAt: command.turn.completedAt,
+          startedAt: fromTimestamp(command.turn.startedAt),
+          completedAt: fromTimestamp(command.turn.completedAt),
         });
 
         if (command.questions.length > 0) {
@@ -273,7 +303,7 @@ export function postgresTurnCommitter(db: Database): TurnCommitter {
               mode: question.mode,
               options: [...question.options],
               rationale: question.rationale,
-              askedAt: question.askedAt,
+              askedAt: fromTimestamp(question.askedAt),
             })),
           );
         }
@@ -286,7 +316,7 @@ export function postgresTurnCommitter(db: Database): TurnCommitter {
               selectedOptionIds: [...answer.selectedOptionIds],
               customText: answer.customText,
               additionalContext: answer.additionalContext,
-              answeredAt: answer.answeredAt,
+              answeredAt: fromTimestamp(answer.answeredAt),
             })),
           );
         }

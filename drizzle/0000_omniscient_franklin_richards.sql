@@ -4,7 +4,7 @@ CREATE TABLE "answers" (
 	"selected_option_ids" jsonb NOT NULL,
 	"custom_text" text,
 	"additional_context" text,
-	"answered_at" text NOT NULL
+	"answered_at" timestamp (3) with time zone NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "questions" (
@@ -16,7 +16,7 @@ CREATE TABLE "questions" (
 	"mode" text NOT NULL,
 	"options" jsonb NOT NULL,
 	"rationale" text,
-	"asked_at" text NOT NULL
+	"asked_at" timestamp (3) with time zone NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "sessions" (
@@ -28,8 +28,8 @@ CREATE TABLE "sessions" (
 	"questions_asked" integer NOT NULL,
 	"current_revision_id" text,
 	"version" integer DEFAULT 0 NOT NULL,
-	"created_at" text NOT NULL,
-	"updated_at" text NOT NULL
+	"created_at" timestamp (3) with time zone NOT NULL,
+	"updated_at" timestamp (3) with time zone NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "sources" (
@@ -42,7 +42,7 @@ CREATE TABLE "sources" (
 	"normalized_text" text,
 	"segments" jsonb,
 	"failure_reason" text,
-	"ingested_at" text NOT NULL
+	"ingested_at" timestamp (3) with time zone NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "turns" (
@@ -56,8 +56,8 @@ CREATE TABLE "turns" (
 	"understanding_after" text NOT NULL,
 	"verdict" jsonb NOT NULL,
 	"usage" jsonb NOT NULL,
-	"started_at" text NOT NULL,
-	"completed_at" text NOT NULL
+	"started_at" timestamp (3) with time zone NOT NULL,
+	"completed_at" timestamp (3) with time zone NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "understanding_revisions" (
@@ -66,7 +66,7 @@ CREATE TABLE "understanding_revisions" (
 	"revision" integer NOT NULL,
 	"produced_by_turn_id" text,
 	"content" jsonb NOT NULL,
-	"created_at" text NOT NULL
+	"created_at" timestamp (3) with time zone NOT NULL
 );
 --> statement-breakpoint
 ALTER TABLE "answers" ADD CONSTRAINT "answers_question_id_questions_id_fk" FOREIGN KEY ("question_id") REFERENCES "public"."questions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
