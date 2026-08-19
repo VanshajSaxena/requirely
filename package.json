@@ -21,7 +21,8 @@
     "db:generate": "pnpm --filter @requirely/core run db:generate",
     "db:migrate": "pnpm --filter @requirely/core run db:migrate",
     "db:studio": "pnpm --filter @requirely/core run db:studio",
-    "verify": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm test"
+    "verify": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm test",
+    "verify:build": "rm -rf apps/web/.next && pnpm build && ./scripts/check-frontend-artifacts.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

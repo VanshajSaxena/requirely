@@ -1,7 +1,7 @@
 import { cn } from '@requirely/ui/lib/utils';
 import type { Metadata } from 'next';
 import { Geist_Mono, Inter } from 'next/font/google';
-import '@requirely/ui/globals.css';
+import './globals.css';
 
 import { ThemeProvider } from '@/components/theme-provider';
 

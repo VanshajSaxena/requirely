@@ -1,0 +1,24 @@
+/* This app's Tailwind entry point.
+ *
+ * Tailwind's automatic source detection is rooted at process.cwd() and hard-skips
+ * node_modules, so it can never reach packages/ui through the workspace symlink.
+ * The kit therefore declares its own sources inside its own stylesheet, and this
+ * file declares only this app's. Each package owns what it scans; neither reaches
+ * outside itself, so moving either one cannot silently break class detection.
+ *
+ * Do NOT add `@import "tailwindcss"` here. apps/web depends on @tailwindcss/postcss
+ * but not on tailwindcss itself, so that import hard-errors "Can't resolve
+ * 'tailwindcss'". The nested import inside the kit's stylesheet resolves correctly,
+ * from packages/ui/node_modules.
+ */
+@import "@requirely/ui/globals.css";
+
+/* Resolved against THIS file's directory, so it normalizes to apps/web — covering
+ * app/ and components/ at any depth. Depth-1 and internal to this package.
+ *
+ * Strictly it is redundant while cwd happens to be apps/web (which is what
+ * `pnpm --filter @requirely/web` gives us, and what makes the auto-detection root
+ * correct by accident). It is here to make detection independent of how the command
+ * was invoked — Turbopack's postcss worker cwd is not verifiable from source.
+ */
+@source "../**/*.{ts,tsx}";

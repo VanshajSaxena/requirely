@@ -3,13 +3,29 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
-/* Tailwind v4 resolves @source against THIS file's directory. The shipped
-   template used ../../../apps, which from packages/ui/src/styles resolves to
-   packages/apps — a directory that does not exist, so it scanned nothing.
-   Four levels up is the repo root. Without a correct entry here, a utility used
-   only inside packages/ui is absent from the app's class scan and gets dropped
-   from the built stylesheet. */
-@source "../../../../apps/**/*.{ts,tsx}";
+/* STRICTLY NECESSARY, and the only @source this package needs.
+   Tailwind's automatic source detection is rooted at the PostCSS plugin's `base`,
+   which defaults to process.cwd() — the consuming app — and it hard-skips
+   node_modules. So nothing can ever reach this package through the workspace
+   symlink without this line. Without it, every utility used only in the kit is
+   dropped from the app's stylesheet and the component renders unstyled, with no
+   error anywhere.
+
+   @source resolves against THIS file's directory, so ../ is packages/ui/src. That
+   is depth-1 and internal: it depends only on this package's own src/styles -> src
+   shape, never on how deep the monorepo is. The app declares its own sources in
+   apps/web/app/globals.css; neither package reaches outside itself.
+
+   Three traps, all verified against the installed tailwindcss@4.3.3:
+     - A WRONG @source PATH IS A SILENT NO-OP. No error, no warning. An earlier
+       version of this file pointed at ../../../apps (three levels, resolving to
+       the nonexistent packages/apps) and scanned nothing, invisibly. That is why
+       scripts/check-frontend-artifacts.sh exists.
+     - Bare package specifiers do not work: @source "@requirely/ui" silently
+       matches nothing. @source patterns never go through the module resolver.
+     - Never point @source at a bare directory inside node_modules — the built-in
+       ignores stop applying for that source and it will scan the whole dependency
+       tree (measured: ~8000 files). */
 @source "../**/*.{ts,tsx}";
 
 @theme inline {
