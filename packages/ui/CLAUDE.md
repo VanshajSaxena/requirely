@@ -48,19 +48,51 @@ Remove either and the rule survives only in prose.
 
 ## Tailwind v4 across the package boundary
 
-`@source` in `src/styles/globals.css` resolves against **that file's directory**, and it is
-what makes the app's build scan this package for class names. A utility used only here and
-absent from a correct `@source` entry is dropped from the built stylesheet — the component
-renders unstyled with no error anywhere.
+**Each package declares only its own sources.** This one has
 
-The shipped shadcn template had `@source "../../../apps/**"`, which from
-`packages/ui/src/styles/` resolves to `packages/apps/**` — a directory that does not exist,
-so it scanned nothing. Corrected to four levels up. Regression test: build `apps/web` and
-grep the emitted CSS for a utility used only in this package (`bg-clip-padding`,
-`shrink-0`) that appears nowhere in the app's source.
+```css
+@source "../**/*.{ts,tsx}";      /* -> packages/ui/src */
+```
+
+and `apps/web/app/globals.css` has its own `@source "../**"` for `apps/web`. Neither
+reaches outside itself, so moving either package cannot silently break detection.
+
+The kit-side line is **strictly necessary**. Tailwind's automatic source detection is
+rooted at the PostCSS plugin's `base`, defaulting to `process.cwd()` — the consuming app —
+and it **hard-skips `node_modules`**, so it can never reach this package through the
+workspace symlink. `@source` resolves against the directory of the file that literally
+contains it, and the resolver follows symlinks to the realpath.
+
+**The failure mode is silent and total.** A utility used only here and not covered by a
+correct `@source` is dropped from the app's stylesheet: the component renders unstyled,
+with no build error, no warning, and nothing in the console. `scripts/check-frontend-artifacts.sh`
+(`pnpm verify:build`) exists solely because the emitted CSS is the only detectable signal —
+and it was proven by deliberately breaking this `@source` and watching it fail.
+
+Traps, all verified against the installed `tailwindcss@4.3.3`:
+
+- **A wrong `@source` path is a no-op, not an error.** The original template shipped
+  `@source "../../../apps/**"`, which from `src/styles/` resolves to `packages/apps/**` —
+  a directory that does not exist. It scanned nothing, invisibly, for as long as it existed.
+- **Bare package specifiers do not work.** `@source "@requirely/ui"` silently matches
+  nothing; `@source` patterns never go through the module resolver.
+- **Never point `@source` at a bare directory inside `node_modules`.** The built-in ignore
+  list stops applying for that source and it will walk the whole dependency tree
+  (measured: ~8000 files).
+- **Turbopack's incremental cache hides all of this.** With a warm `.next`, a broken
+  `@source` still produces the previous, correct stylesheet — which is why
+  `pnpm verify:build` removes `.next` before building.
 
 `@import "shadcn/tailwind.css"` is why `shadcn` is a **dependency**, not a devDependency.
 Removing it breaks the stylesheet, not the CLI.
+
+## This package can never be consumed by Node
+
+`.tsx` is not in Node's type-stripping extension map: importing one gives
+`ERR_UNKNOWN_FILE_EXTENSION`. The kit is bundler-only, permanently, by construction. That
+is fine and expected — but do not try to make it Node-runnable, and do not model it on
+`packages/core`, which is source-only *and* Node-runnable and has a different set of
+constraints as a result.
 
 ## Commands
 

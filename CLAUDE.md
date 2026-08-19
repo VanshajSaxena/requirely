@@ -48,6 +48,7 @@ before working there.
 
 ```bash
 pnpm verify        # typecheck + lint + boundaries + test — the whole gate
+pnpm verify:build  # clean build + assert the emitted artifacts (see below)
 pnpm typecheck     # tsc --noEmit in every package
 pnpm lint          # biome check .   (pnpm lint:fix to apply)
 pnpm boundaries    # both boundary scripts
@@ -69,7 +70,9 @@ when some have it and some do not, the rest are **skipped silently with exit 0**
 package could sit outside the gate forever. `--filter <pkg> run <missing>` exits 1.
 Adding a package therefore means editing the `typecheck` line, which makes "is it in the
 gate?" a reviewable diff rather than an emergent property. Never use `--if-present` in
-`verify`.
+`verify`. `--fail-if-no-match` exists but does not help: it guards against no *project*
+matching the filter, not against a matched project lacking the script. Verified —
+`pnpm -r run dev` runs only `apps/web` and exits 0.
 
 ## Environment
 
@@ -111,6 +114,19 @@ Entry points should pass an explicit module-relative path. Nothing calls it yet.
 - **Every boundary script must abort, not pass, when its target directories are missing.**
   Both helpers return silently on a missing directory, so a wrong cwd would otherwise print
   "Boundary check passed" while checking nothing.
+- **Node refuses to type-strip any file whose *realpath* is under `node_modules`**
+  (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). `packages/core` is Node-runnable only
+  because pnpm symlinks it out to `packages/core`. Breaks at **runtime** under
+  `pnpm deploy`, `--preserve-symlinks`, `node-linker=hoisted`, and any Docker layout or
+  publish that copies the package. `apps/web` is immune — Next bundles rather than strips.
+  The trigger and the config-only fix are recorded in `packages/core/CLAUDE.md`.
+- **Tailwind's source detection is rooted at `process.cwd()`, and a wrong `@source` path is
+  a silent no-op** — no error, no warning, just unstyled components. Each package therefore
+  declares only its own sources, and `pnpm verify:build` asserts the emitted CSS.
+- **Turbopack's incremental cache can make `pnpm verify:build` pass on stale output.**
+  Measured: a deliberately broken `@source` passed every check with a warm `.next` and
+  failed all three CSS checks after `rm -rf`. That is why `verify:build` removes `.next`
+  first — it is correctness, not tidiness.
 
 ## Enforced architectural boundaries
 
@@ -121,6 +137,13 @@ Two scripts, deliberately not one parameterized script — the rule sets are dis
 | --- | --- |
 | `packages/core/scripts/check-boundaries.sh` | hexagonal layering inside core, the zero-third-party allowlist for `domain/`, AI-SDK containment, determinism |
 | `scripts/check-frontend-boundaries.sh` | no server-only deps in the browser graph; `apps/` may reach only `@requirely/core/domain`; `packages/ui` knows no domain, no `apps/`, no `node:` |
+
+A third script, `scripts/check-frontend-artifacts.sh`, is **not** part of `pnpm boundaries`
+— it needs a build, so it runs under `pnpm verify:build`. It asserts what no static check
+can see: that `/` actually prerendered, that the design system's Button reached the HTML,
+and that a utility used *only* in `packages/ui` survived into the app's CSS. That last one
+is the only detectable signal for a broken Tailwind cross-package scan, which otherwise
+fails silently.
 
 Both run under `pnpm boundaries`, and both **must fail CI** — a rule that lives only in
 prose decays silently. After changing either, re-prove it by planting deliberate violations

@@ -46,8 +46,9 @@ typecheck instead of shipping a silent mismatch. The answer UI should call the s
 
 The seam is proven but currently unused — `@requirely/core` is not in this app's
 dependencies. To use it: add `"@requirely/core": "workspace:*"`, and nothing else.
-No `transpilePackages` entry is needed (verified); `allowImportingTsExtensions` is
-already set in `tsconfig.json` for this exact purpose and is commented there.
+No `transpilePackages` entry is needed (verified). You will also need
+`allowImportingTsExtensions: true` in `tsconfig.json` — it is deliberately absent while
+core is unused, and TS5097 names the flag in its own message, so the failure tells you.
 
 ## Sharp edges
 
@@ -55,19 +56,49 @@ already set in `tsconfig.json` for this exact purpose and is commented there.
   It makes `next build` shell out to the project-local `tsc` instead of TypeScript's
   JS compiler API. That is the *only* reason TypeScript 7 works here: TS 7.0 ships no
   JS API (planned for 7.1), so the in-process integration cannot load it.
-- **`allowImportingTsExtensions: true` is not about this app's code.** There is no TS
-  project boundary between packages — project references are impossible, since
-  `composite` conflicts with core's `noEmit` — so `tsc` checks core's files with this
-  config, and core's files carry `.ts` specifiers for Node's type stripping. Side
-  effect: app code *could* write `./foo.ts`. Don't.
+- **`allowImportingTsExtensions` is deliberately absent, and would not be about this
+  app's code.** An `exports`-map target that *is* a `.ts` file resolves with no compiler
+  flag at all; the flag only governs `.ts` specifiers written in *source text*. It is
+  needed only once `@requirely/core` is a dependency, because there is no TS project
+  boundary (`composite` conflicts with core's `noEmit`), so `tsc` would then check core's
+  files with this config. Measured: adding the dep plus one `import type { Question }`
+  produces **68 × TS5097**; clean with the flag on.
 - **`erasableSyntaxOnly` and `rewriteRelativeImportExtensions` are explicitly `false`**
   in `tsconfig.json`, not merely un-inherited. The base does not set them today; stating
   them means a future edit to the base cannot silently impose Node's stripping rules on
   a bundled React app.
-- **`exactOptionalPropertyTypes` is inherited and is a real tax on React.**
-  `<C p={maybeUndefined}/>` where `p?: T` is an error. Declare `p: T | undefined` in our
-  own components, or spread conditionally when forwarding. Fix the component rather than
-  disabling the flag — but this is the decision most likely to need revisiting.
+- **`exactOptionalPropertyTypes` is *not* a tax on this stack.** An earlier version of
+  this file claimed it was; that was reasoned, not measured. Counted over the installed
+  `.d.ts` files, optional props carrying an explicit `| undefined`:
+
+  | Package | clean |
+  | --- | --- |
+  | `@base-ui/react` 1.7.0 | **100%** — deliberately EOPT-authored; its shared mapped type even carries a `T extends undefined ? undefined` arm so `undefined` survives on forwarded DOM props |
+  | `csstype` (backs `CSSProperties`) | 100% |
+  | `@types/react` 19 | ~95%; the residue is optional *parameters*, which the flag does not touch |
+  | `class-variance-authority` | clean — `VariantProps` writes `| undefined` into the mapped type, so a conditional `variant` is fine |
+  | **`next/link`** | **0 / 14** |
+  | **`next/image`** | **0 / 23** |
+  | **`next/script`** | **0 / 7** |
+  | `lucide-react` | 0 / 2 (`size`, `absoluteStrokeWidth`) |
+  | `next-themes` | 13 / 15 (`nonce`, `scriptProps`) |
+
+  So the friction is confined to `next/link`, `next/image`, `next/script`, lucide's
+  `size`, and next-themes' `nonce` — **none of which this repo imports.** When it does
+  bite, wrap those once in `packages/ui` with hygienic props and do the conditional
+  spread inside the wrapper.
+
+  **No vendored shadcn component needs a workaround.** The registry's pattern — type
+  props off `X.Props` / `ComponentProps<…>` and spread the rest unchanged — is EOPT-safe
+  because source and target are the same declaration. That is why the installed
+  `button.tsx` compiles with no annotations.
+
+- **The prop convention here is `p?: T | undefined` — both the `?:` and the explicit
+  `| undefined`.** Not `p: T | undefined`: that is the domain-record convention from
+  `packages/core`, and in JSX it forces every call site to pass the key. `?: T | undefined`
+  is what Base UI and DefinitelyTyped use, and it gets the flag's benefit at zero
+  call-site cost. If you hand-author a prop on a vendored component, never write `p?: T`
+  bare — that is what breaks *callers*.
 - **`next dev` does not rewrite `tsconfig.json`** at this version (verified). If it ever
   does, the diff is Next telling you which field it needs; read it, don't revert it.
 - **`next/font/google` downloads fonts at build time.** A cold offline `next build` fails
