@@ -21,17 +21,20 @@
     // silently impose Node's type-stripping rules on a bundled React app:
     //   erasableSyntaxOnly    bans enum/parameter properties — meaningless under SWC
     //   rewriteRelative…      rewrites .ts -> .js on emit — fights Next's transform
-    // Enabled for a reason that is NOT about this app's own code, which never
-    // writes .ts specifiers. There is no TS project boundary between packages
-    // (project references are impossible here — composite conflicts with noEmit),
-    // so tsc checks @requirely/core's files using THIS config, and core's files
-    // are full of `from './x.ts'` to satisfy Node's type stripping. Without this,
-    // every shared domain file fails with TS5097.
-    // Its prerequisite, noEmit, is set above.
-    "allowImportingTsExtensions": true,
-
     "erasableSyntaxOnly": false,
     "rewriteRelativeImportExtensions": false,
+
+    // `allowImportingTsExtensions` is deliberately ABSENT. It would only be needed
+    // once @requirely/core is a dependency here: there is no TS project boundary, so
+    // tsc would then check core's files with THIS config, and core's files carry
+    // `.ts` specifiers for Node's type stripping. Until then it is dead config —
+    // verified `tsc --noEmit --allowImportingTsExtensions false` exits 0, because
+    // packages/ui/src has no relative imports at all.
+    //
+    // Note the distinction that made the original comment wrong: an exports-map
+    // target that IS a .ts file resolves with no compiler flag whatsoever. The flag
+    // only governs .ts specifiers written in source text. TS5097 names the flag in
+    // its own message, so the day it is needed is self-evident.
 
     "plugins": [{ "name": "next" }],
 
