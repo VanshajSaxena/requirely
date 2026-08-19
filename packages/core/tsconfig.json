@@ -19,10 +19,20 @@
     // no `enum`, no parameter properties, no `namespace`. Use `as const` + a union type.
     "erasableSyntaxOnly": true,
 
-    // Relative imports carry the .ts extension so Node can resolve them unbuilt.
-    // TypeScript rejects allowImportingTsExtensions unless emit is off, so these
-    // three and `noEmit` are one unit — do not separate them.
+    // Relative imports carry the .ts extension because Node's ESM resolver needs the
+    // exact on-disk filename. Verified on 24.19: './answer.js' and extensionless both
+    // give ERR_MODULE_NOT_FOUND, and --experimental-transform-types does not change it.
+    // Node's resolver contains no reference to .ts at all — its TS support is an
+    // extension->format table plus amaro.transformSync, neither of which reads specifiers.
+    //
+    // TS5096 permits allowImportingTsExtensions when ANY of `noEmit`,
+    // `emitDeclarationOnly`, or `rewriteRelativeImportExtensions` is set. `noEmit`
+    // satisfies it here.
     "allowImportingTsExtensions": true,
+
+    // Inert today: with `noEmit` there is no output to rewrite. Kept because it is the
+    // flag that makes adding a build a config-only change — see the build trigger in
+    // this package's CLAUDE.md. It is what lets emit coexist with .ts specifiers.
     "rewriteRelativeImportExtensions": true,
 
     "noEmit": true

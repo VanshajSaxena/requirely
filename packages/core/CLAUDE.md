@@ -176,20 +176,72 @@ Three properties of the script that are load-bearing:
 **isomorphic** — safe to bundle into a browser. `engine/`, `adapters/`, `config/` and
 `ingestion/` are Node-only.
 
-**The absence of a `"."` export is load-bearing.** A barrel would let `apps/web` write
-`import … from '@requirely/core'` and drag `postgres` and `@electric-sql/pglite` into the
-client graph — the exact leak the boundary apparatus exists to prevent.
+**The absence of a `"."` export is load-bearing.** It would let `apps/web` write
+`import … from '@requirely/core'`, which is both a naming lie (the package is not the
+domain) and a specifier that `scripts/check-frontend-boundaries.sh` rule 8 would reject —
+a bare `@requirely/core` matches its denylist and misses the `/domain$` exemption.
+
+**The map is enforcing more than the boundary scripts are credited for.** `adapters/`,
+`engine/` and `config/` are not exported at all, so Node hard-errors
+`ERR_PACKAGE_PATH_NOT_EXPORTED` on `@requirely/core/adapters/…` before any lint runs. The
+widened rule-4 regex is belt-and-braces for typecheck time and for when more subpaths land.
+
+**Self-reference already works off any `exports` key, not just `"."`.** Verified:
+`src/engine/*.ts` can write `from '@requirely/core/domain'` today, from any depth. That is
+exactly why rule 4 matches `@requirely/core/…` as well as `../` — the old regex required a
+leading `../` and would have waved the package-name form straight through.
 
 Verified 2026-08-19: `apps/web` importing `@requirely/core/domain` typechecks, builds and
 executes at prerender time under Turbopack, **without** a `transpilePackages` entry for
-core. The one thing it needs is `allowImportingTsExtensions: true` in
-`apps/web/tsconfig.json` — not for the app's own code, but because there is no TS project
-boundary, so `tsc` checks core's files with the app's config and core's files carry `.ts`
-specifiers.
+core. Two corrections to how that was first written up:
 
-When `apps/api` arrives, add Node-only subpaths guarded by conditions:
-`"./engine": { "node": "./src/engine/loop.ts", "default": null }`. The `null` makes a
-client-side import fail at build time rather than shipping Postgres to a browser.
+- TypeScript resolves an `exports`-map target that is a `.ts` file with **no compiler flag
+  at all**. `allowImportingTsExtensions` only governs `.ts` specifiers written in *source
+  text*.
+- So the flag is needed in a consumer only when **core's own internal imports** enter that
+  consumer's `tsc` program, which happens because there are no project references. It has
+  been removed from `apps/web` until core is actually a dependency there; TS5097 names the
+  flag in its own message, so re-adding it is self-evident.
+
+## Source-only, and the one thing that breaks it
+
+**Node refuses to type-strip any file whose *realpath* is under `node_modules`**
+(`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). This package is Node-runnable only because
+pnpm symlinks it and Node resolves through to `packages/core`, which is outside
+`node_modules`. That is load-bearing and it is not expressed in any config.
+
+```
+$ cd apps/web && node -e "import('@requirely/ui/lib/utils')"                     → OK
+$ cd apps/web && node --preserve-symlinks -e "import('@requirely/ui/lib/utils')"
+  ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING
+```
+
+Breaks under: `pnpm deploy` · `--preserve-symlinks` · `node-linker=hoisted` · any Docker
+layout or publish step that **copies** the package. At **runtime**, not build time.
+`apps/web` is immune because Next bundles rather than strips.
+
+**Trigger.** The commit that adds a Node-deployed `apps/api` must either bundle that app
+(normal for Hono) or apply this delta — it is config-only, no source changes:
+
+```
+tsconfig:   noEmit → false; add declaration: true, outDir: "dist", rootDir: "src"
+            KEEP allowImportingTsExtensions — legal alongside emit because
+            rewriteRelativeImportExtensions satisfies TS5096
+exports:    "./domain" → { "types":   "./dist/domain/index.d.ts",
+                           "default": "./dist/domain/index.js" }
+.gitignore: dist/
+```
+
+Emit rewrites `./answer.ts` → `./answer.js` in **both** the `.js` and the `.d.ts`, so the
+output is self-consistent. Dropping `noEmit` also unlocks TS project references, since
+`composite` conflicts with `noEmit` rather than with emitting — which would stop consumers
+typechecking core's source at all.
+
+**Do not reach for conditional exports** (source to bundlers, `dist` to Node). The moment
+`tsc` follows the source condition, core's `.ts` specifiers re-enter the consumer's program
+and `allowImportingTsExtensions` comes straight back — it does not solve the problem it
+exists for. It also splits module identity across two copies, which breaks `instanceof` on
+the error classes in `domain/shared/errors.ts`.
 
 ## Note on `biome.json`
 
