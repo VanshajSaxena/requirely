@@ -47,11 +47,12 @@ before working there.
 ## Commands
 
 ```bash
-pnpm verify        # typecheck + lint + boundaries + test — the whole gate
+pnpm verify        # typecheck + lint + boundaries + node-runnable + test — the whole gate
 pnpm verify:build  # clean build + assert the emitted artifacts (see below)
 pnpm typecheck     # tsc --noEmit in every package
-pnpm lint          # biome check .   (pnpm lint:fix to apply)
+pnpm lint          # biome check --error-on-warnings .   (pnpm lint:fix to apply)
 pnpm boundaries    # both boundary scripts
+pnpm node-runnable # prove Node can still execute packages/core (see below)
 pnpm test          # vitest run in packages/core
 
 pnpm dev           # next dev
@@ -116,10 +117,23 @@ Entry points should pass an explicit module-relative path. Nothing calls it yet.
   "Boundary check passed" while checking nothing.
 - **Node refuses to type-strip any file whose *realpath* is under `node_modules`**
   (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). `packages/core` is Node-runnable only
-  because pnpm symlinks it out to `packages/core`. Breaks at **runtime** under
-  `pnpm deploy`, `--preserve-symlinks`, `node-linker=hoisted`, and any Docker layout or
-  publish that copies the package. `apps/web` is immune — Next bundles rather than strips.
-  The trigger and the config-only fix are recorded in `packages/core/CLAUDE.md`.
+  because pnpm symlinks it out to `packages/core`. Breaks at **runtime**, not build time.
+  Re-measured 2026-08-20 on pnpm 11.20.0 / Node 24.19 — the accurate breaker list is:
+  `--preserve-symlinks`; `injectWorkspacePackages: true` when deploying an **app that
+  consumes** a source-only package; and any Docker or publish step that **copies** rather
+  than links. `apps/web` is immune — Next bundles rather than strips. The full
+  measurement table, the trigger, and the config-only fix are in `packages/core/CLAUDE.md`.
+  `pnpm node-runnable` now enforces this instead of leaving it to prose.
+- **`node-linker=hoisted` does *not* break type stripping** — an earlier version of this
+  list said it did. Measured: pnpm hoists third-party packages but keeps **workspace**
+  links as symlinks into the source tree, so every realpath stays outside `node_modules`
+  and all imports still work.
+- **pnpm 11 silently ignores `node-linker` in `.npmrc`** the same way it ignores the
+  `pnpm` field in `package.json` — no warning, and the install still produces an isolated
+  layout. Only `nodeLinker:` in `pnpm-workspace.yaml` takes effect. Verified by counting
+  top-level `node_modules` entries: 3 (ignored) vs 318 (applied). Assume **every** pnpm
+  setting has moved, and confirm with `pnpm config get <key>` rather than by reading
+  `.npmrc`.
 - **Tailwind's source detection is rooted at `process.cwd()`, and a wrong `@source` path is
   a silent no-op** — no error, no warning, just unstyled components. Each package therefore
   declares only its own sources, and `pnpm verify:build` asserts the emitted CSS.
@@ -138,7 +152,39 @@ Two scripts, deliberately not one parameterized script — the rule sets are dis
 | `packages/core/scripts/check-boundaries.sh` | hexagonal layering inside core, the zero-third-party allowlist for `domain/`, AI-SDK containment, determinism |
 | `scripts/check-frontend-boundaries.sh` | no server-only deps in the browser graph; `apps/` may reach only `@requirely/core/domain`; `packages/ui` knows no domain, no `apps/`, no `node:` |
 
-A third script, `scripts/check-frontend-artifacts.sh`, is **not** part of `pnpm boundaries`
+Both are greps over source text, which is why the third script below is separate rather
+than a rule inside them: its two rules are properties of the *install topology* and of
+*Node's parser*, and neither is expressible as a pattern.
+
+`pnpm lint` runs `biome check --error-on-warnings`. Without the flag Biome exits 0 on
+warnings, and it was doing exactly that: `pnpm verify` was green while two
+`noUnusedImports` warnings sat in `src/integration/`. A gate that reports findings and
+passes anyway trains you to stop reading its output. Note the asymmetry the flag exposes —
+formatter drift is already an *error*, so `pnpm lint` was one edit away from failing for a
+reason unrelated to the warnings.
+
+A third script, `packages/core/scripts/check-node-runnable.sh` (`pnpm node-runnable`),
+proves Node can still **execute** `packages/core`. It is the only gate that observes the
+type-stripping bet, because that bet is not a property of any file:
+
+| Failure | typecheck | lint | test | node-runnable |
+| --- | --- | --- | --- | --- |
+| `export enum X {}` in `domain/` | ✅ TS1294 | — | **passes 9/9** | ✅ |
+| relative **value** import missing `.ts` | ✅ TS2835 | — | — | ✅ |
+| relative **type-only** import missing `.ts` | ✅ TS2835 | — | — | — (specifier erased) |
+| package realpath moves under `node_modules` | — | — | — | ✅ |
+
+Two consequences, both measured 2026-08-20:
+
+- **`pnpm test` passing is no evidence that Node can run this code.** Vitest transpiles
+  with its own pipeline and happily executes an `enum` that Node rejects with
+  `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. That makes `erasableSyntaxOnly` in
+  `packages/core/tsconfig.json` load-bearing for the *runtime*, not a style preference.
+- **`pnpm typecheck` and `pnpm node-runnable` are complementary, not redundant.** Node
+  never resolves an `import type` specifier, so only `tsc` sees a missing extension there;
+  only `node` sees the realpath rule. Neither alone covers the contract.
+
+A fourth script, `scripts/check-frontend-artifacts.sh`, is **not** part of `pnpm boundaries`
 — it needs a build, so it runs under `pnpm verify:build`. It asserts what no static check
 can see: that `/` actually prerendered, that the design system's Button reached the HTML,
 and that a utility used *only* in `packages/ui` survived into the app's CSS. That last one

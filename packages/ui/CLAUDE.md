@@ -89,7 +89,11 @@ Removing it breaks the stylesheet, not the CLI.
 ## This package can never be consumed by Node
 
 `.tsx` is not in Node's type-stripping extension map: importing one gives
-`ERR_UNKNOWN_FILE_EXTENSION`. The kit is bundler-only, permanently, by construction. That
+`ERR_UNKNOWN_FILE_EXTENSION`. Re-verified 2026-08-20 on Node 24.19 — all three ways, and
+`--experimental-transform-types` does not change it, so "permanently" is measured rather
+than assumed. (`src/lib/utils.ts` is a `.ts` file and *does* strip fine, which is why
+`pnpm node-runnable` covers `packages/core` only: there is nothing here to assert.)
+The kit is bundler-only, permanently, by construction. That
 is fine and expected — but do not try to make it Node-runnable, and do not model it on
 `packages/core`, which is source-only *and* Node-runnable and has a different set of
 constraints as a result.

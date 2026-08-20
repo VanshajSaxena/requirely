@@ -13,6 +13,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "boundaries": "./scripts/check-boundaries.sh",
+    "node-runnable": "./scripts/check-node-runnable.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",

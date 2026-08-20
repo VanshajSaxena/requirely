@@ -81,6 +81,7 @@ Run these from the repo root (they delegate here) or from `packages/core` direct
 ```bash
 pnpm --filter @requirely/core run typecheck    # tsc --noEmit
 pnpm --filter @requirely/core run boundaries   # this package's six rules
+pnpm --filter @requirely/core run node-runnable # prove `node` can still execute src/
 pnpm --filter @requirely/core run test         # vitest run
 pnpm --filter @requirely/core run test:watch
 
@@ -123,10 +124,19 @@ Consequences:
 ## Toolchain constraints worth knowing before writing code
 
 - **Node 24 runs `.ts` directly** via type stripping, so relative imports must carry the
-  `.ts` extension (`import { x } from './x.ts'`).
+  `.ts` extension (`import { x } from './x.ts'`). Precisely: **only *value* imports are
+  enforced by Node.** An `import type` specifier is erased before resolution, so Node never
+  looks at it and an extensionless one runs fine — `tsc` (TS2835) is the *only* gate that
+  catches those. Verified both directions 2026-08-20. Write the extension everywhere
+  anyway; the point is knowing which gate is protecting you.
 - **Only erasable TypeScript compiles** (`erasableSyntaxOnly`): no `enum`, no constructor
   parameter properties, no `namespace`. Use `as const` objects with a derived union type
   instead of `enum`, and assign class fields in the constructor body.
+  **This flag is a runtime constraint, not a style preference.** Measured: a file with
+  `export enum X {}` passes `vitest` 9/9 — vitest transpiles with its own pipeline — and
+  dies under `node` with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`, a third error code beyond the
+  two named elsewhere in this file. Weakening or dropping the flag would be a silent
+  runtime regression with a fully green test suite. `pnpm node-runnable` is the backstop.
 - `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess` are on. Optional fields that
   can genuinely be absent are declared `foo: T | undefined`, not `foo?: T`.
 - These three live in `packages/core/tsconfig.json`, **not** in the root
@@ -135,14 +145,22 @@ Consequences:
 
 ## Enforced architectural boundaries
 
-Two gates enforce the provider-agnostic constraint, because a rule that lives only in
-prose decays silently:
+Three gates run over this package. Two enforce the provider-agnostic constraint, because a
+rule that lives only in prose decays silently:
 
 - `pnpm boundaries` (`scripts/check-boundaries.sh`) — the CI gate. Six `report()` calls
   covering five documented rules (the domain third-party rule is two checks: production
   files, and test files which may additionally use `vitest`).
 - Biome `noRestrictedImports`, scoped per-directory in `biome.json` `overrides` — the
   editor gate, for feedback while typing.
+
+The third, `pnpm node-runnable` (`scripts/check-node-runnable.sh`), enforces something no
+grep can express — see "Source-only, and the one thing that breaks it" below. It is a
+separate script rather than two more `report()` calls in `check-boundaries.sh` because
+those rules are all greps over source text, while these two observe the install topology
+and Node's parser. Its five failure paths were each proven by planting a violation:
+non-erasable syntax, an extensionless value import, a realpath under `node_modules`, a
+wrong cwd (abort guard), and a `find` matching zero files (vacuous-pass guard).
 
 The rules: `domain/` imports no outer layer and no third-party package but `zod` (test
 files may add `vitest`); `engine/` imports neither `adapters/` nor `app/`; **`ai` and
@@ -216,12 +234,51 @@ $ cd apps/web && node --preserve-symlinks -e "import('@requirely/ui/lib/utils')"
   ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING
 ```
 
-Breaks under: `pnpm deploy` · `--preserve-symlinks` · `node-linker=hoisted` · any Docker
-layout or publish step that **copies** the package. At **runtime**, not build time.
-`apps/web` is immune because Next bundles rather than strips.
+**This package really is Node-runnable today, not merely in principle.** Verified
+2026-08-20 on Node 24.19: all **49** non-test modules under `src/` — including
+`engine/loop.ts`, `adapters/storage/postgres/client.ts` and `config/env.ts`, not just the
+zod-only domain — import cleanly in one `node` process. `pnpm node-runnable`
+(`scripts/check-node-runnable.sh`) asserts it on every `pnpm verify`, so this is now a
+gate rather than a belief. It cost ~0.7s.
 
-**Trigger.** The commit that adds a Node-deployed `apps/api` must either bundle that app
-(normal for Hono) or apply this delta — it is config-only, no source changes:
+### What actually breaks it — measured, not reasoned
+
+Re-measured 2026-08-20 on pnpm 11.20.0. The earlier list in this file was wrong in two
+places; this table replaces it.
+
+| Route | Result | Type stripping |
+| --- | --- | --- |
+| `--preserve-symlinks` | realpath stays inside `node_modules` | ✗ `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` |
+| `cp -r` into a consumer's `node_modules` (Docker `COPY`, `npm publish`) | realpath is real | ✗ same |
+| `pnpm deploy` (default) | **refuses to run**: `ERR_PNPM_DEPLOY_NONINJECTED_WORKSPACE` | n/a — never gets that far |
+| `pnpm deploy --legacy`, deploying **core itself** | core lands at the deploy *root* | ✓ works, all 4 entries |
+| `pnpm deploy --legacy`, deploying an **app** | dep symlinked back to the original checkout by absolute path | ✓ locally — but the output is **not self-contained**; copy or containerize it and the link dangles |
+| `pnpm deploy` + `injectWorkspacePackages: true`, deploying an **app** | dep **copied** to `out/node_modules/.pnpm/@requirely+ui@file+…/` | ✗ `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` |
+| `nodeLinker: hoisted` | workspace links stay symlinks to the source tree | ✓ works — the old claim that this breaks it was **false** |
+
+So the break needs a specific conjunction: **an app that consumes this package, deployed
+on the injected path.** That is precisely the route pnpm's own error message pushes you
+toward, which is what makes it dangerous — and it is invisible in the other three deploy
+shapes, so "we deployed fine last time" proves nothing.
+
+There is **no flag-level escape hatch.** `--experimental-strip-types` and
+`--experimental-transform-types` both still fail; `--no-experimental-strip-types` only
+downgrades the error to `ERR_UNKNOWN_FILE_EXTENSION`.
+
+At **runtime**, not build time. `apps/web` is immune because Next bundles rather than
+strips.
+
+**Decision (2026-08-20): bundle the app; do not add emit here.** The two options were
+being presented as equivalent and the measurements say they are not. Bundling `apps/api`
+(normal for Hono, and what `apps/web` already does) costs nothing today, produces a
+self-contained artifact, and makes the entire realpath class of problem stop existing —
+including the injected-deploy trap above, which no amount of care in *this* package can
+prevent. Adding emit permanently splits "the source" from "the artifact", reopens the
+`allowImportingTsExtensions` question in every consumer, and buys nothing while every
+deployable is bundled. Revisit only if something must consume core **unbundled** under
+Node — publishing to a registry, or a consumer that cannot run a bundler.
+
+**Trigger.** If that day comes, the delta is config-only, no source changes:
 
 ```
 tsconfig:   noEmit → false; add declaration: true, outDir: "dist", rootDir: "src"

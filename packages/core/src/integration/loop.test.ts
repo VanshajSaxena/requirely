@@ -2,13 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { type FakeScript, fakeStructuredGenerator } from '../adapters/ai/fake.ts';
 import { inMemoryStores } from '../adapters/storage/memory.ts';
 import {
-  ALL_COVERAGE_DIMENSIONS,
   Answer,
-  type CoverageDimension,
   createSession,
   DEFAULT_SUFFICIENCY_POLICY,
   InvalidAnswerError,
-  type Question,
   type Session,
   type SourceId,
   type TurnCommit,
@@ -20,14 +17,7 @@ import { fixedClock, sequentialIdGenerator } from '../domain/testing/fakes.ts';
 import { type EngineDeps, runTurn, type TurnRequest } from '../engine/loop.ts';
 import { STRATEGIES, type StrategyName } from '../engine/strategies.ts';
 import { ingestText } from '../ingestion/text.ts';
-import {
-  answerAll,
-  coverage,
-  SOURCE_TEXT,
-  scriptFor,
-  TURN_1_ASSESSMENT,
-  TURN_1_DELTA,
-} from './scenario.ts';
+import { answerAll, SOURCE_TEXT, scriptFor, TURN_1_ASSESSMENT, TURN_1_DELTA } from './scenario.ts';
 
 /**
  * The whole loop, end to end, with no provider package installed.

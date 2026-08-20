@@ -1,8 +1,10 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // Both are unbuilt TypeScript workspace packages rather than compiled
-  // dependencies, so the bundler has to compile them rather than consume them.
+  // An unbuilt TypeScript workspace package rather than a compiled dependency, so the
+  // bundler has to compile it rather than consume it. Only @requirely/ui needs this:
+  // @requirely/core is not a dependency here, and would not need an entry if it were
+  // (verified — see this app's CLAUDE.md).
   transpilePackages: ['@requirely/ui'],
 
   // Note on TypeScript 7: `next build` typechecks by shelling out to the
