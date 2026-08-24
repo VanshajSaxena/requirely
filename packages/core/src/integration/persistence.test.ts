@@ -76,7 +76,7 @@ describe('the loop over Postgres', () => {
     await first.stores.sessions.create(session);
 
     const source = ingestText(
-      { sessionId: session.id, label: 'kickoff notes', text: SOURCE_TEXT },
+      { sessionId: session.id, label: 'kickoff notes', text: SOURCE_TEXT, ordinal: 1 },
       first.deps,
     );
     await first.stores.sources.add(source);
@@ -120,7 +120,7 @@ describe('the loop over Postgres', () => {
     expect(turn2.revision.content.gaps).toHaveLength(0);
     // Turn 1's requirement survived a full round-trip through JSONB.
     expect(turn2.revision.content.requirements).toHaveLength(2);
-    expect(turn2.revision.content.requirements[0]?.id).toBe('req_1');
+    expect(turn2.revision.content.requirements[0]?.id).toBe('req-1');
   });
 
   it('writes nothing when the turn fails, leaving the session resumable', async () => {
@@ -132,7 +132,7 @@ describe('the loop over Postgres', () => {
     const session = createSession({ questionBudget: 12 }, engine.deps);
     await engine.stores.sessions.create(session);
     const source = ingestText(
-      { sessionId: session.id, label: 'notes', text: SOURCE_TEXT },
+      { sessionId: session.id, label: 'notes', text: SOURCE_TEXT, ordinal: 1 },
       engine.deps,
     );
     await engine.stores.sources.add(source);

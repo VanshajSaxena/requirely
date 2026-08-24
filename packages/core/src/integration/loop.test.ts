@@ -24,7 +24,7 @@ import { answerAll, SOURCE_TEXT, scriptFor, TURN_1_ASSESSMENT, TURN_1_DELTA } fr
  *
  * If this passes, the ports held: the engine never learns which model produced
  * anything. Everything here is deterministic — a sequential id generator and a
- * fixed clock — which is also what lets fixtures reference ids like `gap_1`
+ * fixed clock — which is also what lets fixtures reference ids like `gap-1`
  * before they have been minted.
  */
 
@@ -80,6 +80,8 @@ async function seedSession(
       sessionId: session.id,
       label: 'kickoff notes',
       text: SOURCE_TEXT,
+      // First source in this session, so `src-1`.
+      ordinal: 1,
     },
     h.deps,
   );
@@ -122,9 +124,9 @@ describe('runTurn — the gathering loop', () => {
       h.deps,
     );
 
-    expect(questions[0]?.id).toBe('qst_1');
-    expect(questions[0]?.options.map((o) => o.id)).toEqual(['opt_1', 'opt_2']);
-    expect(questions[1]?.options.map((o) => o.id)).toEqual(['opt_3', 'opt_4', 'opt_5']);
+    expect(questions[0]?.id).toBe('qst-1');
+    expect(questions[0]?.options.map((o) => o.id)).toEqual(['opt-1', 'opt-2']);
+    expect(questions[1]?.options.map((o) => o.id)).toEqual(['opt-3', 'opt-4', 'opt-5']);
     expect(questions.every((q) => q.allowsCustom)).toBe(true);
   });
 
@@ -150,7 +152,7 @@ describe('runTurn — the gathering loop', () => {
     expect(second.revision.content.resolvedGaps).toHaveLength(2);
     // Turn 1's requirement survived turn 2 untouched — the property deltas exist for.
     expect(second.revision.content.requirements).toHaveLength(2);
-    expect(second.revision.content.requirements[0]?.id).toBe('req_1');
+    expect(second.revision.content.requirements[0]?.id).toBe('req-1');
     h.generator.assertScriptDrained();
   });
 
@@ -204,7 +206,7 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
     const callsSoFar = h.generator.calls.length;
 
     const empty = Answer.parse({
-      id: 'ans_1',
+      id: 'ans-1',
       questionId: first.questions[0]?.id,
       answeredAt: '2026-01-01T00:00:00.000Z',
     });
@@ -237,7 +239,7 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
   it('caps questions per turn so a round stays answerable', async () => {
     const many = {
       questions: Array.from({ length: 6 }, (_, i) => ({
-        gapId: i % 2 === 0 ? 'gap_1' : 'gap_2',
+        gapId: i % 2 === 0 ? 'gap-1' : 'gap-2',
         text: `Question ${i}?`,
         mode: 'single',
         options: [{ label: 'A' }, { label: 'B' }],
@@ -267,8 +269,8 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
       'generate-questions': [
         {
           questions: [
-            { gapId: 'gap_99', text: 'Invented gap?', mode: 'single', options: [] },
-            { gapId: 'gap_1', text: 'Real gap?', mode: 'single', options: [] },
+            { gapId: 'gap-99', text: 'Invented gap?', mode: 'single', options: [] },
+            { gapId: 'gap-1', text: 'Real gap?', mode: 'single', options: [] },
           ],
         },
       ],
@@ -282,7 +284,7 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
     );
 
     expect(result.questions).toHaveLength(1);
-    expect(result.questions[0]?.gapId).toBe('gap_1');
+    expect(result.questions[0]?.gapId).toBe('gap-1');
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   type Answer,
+  type AnswerId,
   applyDelta,
   assertTransition,
   CapabilityError,
@@ -14,6 +15,7 @@ import {
   type QuestionDraft,
   RevisionId,
   type Session,
+  type SessionId,
   type SessionRepository,
   type Source,
   type SourceId,
@@ -133,11 +135,12 @@ async function resolveAnswers(
 
 async function loadSources(
   repository: SourceRepository,
+  sessionId: SessionId,
   ids: readonly SourceId[],
 ): Promise<Source[]> {
   const loaded: Source[] = [];
   for (const id of ids) {
-    const source = await repository.findById(id);
+    const source = await repository.findById(sessionId, id);
     if (source !== null) loaded.push(source);
   }
   return loaded;
@@ -158,7 +161,7 @@ export async function runTurn(
   const startedAt = deps.clock.now();
 
   const answered = await resolveAnswers(deps, request.answers ?? []);
-  const newSources = await loadSources(deps.sources, request.sourceIds ?? []);
+  const newSources = await loadSources(deps.sources, session.id, request.sourceIds ?? []);
   const previous = await deps.revisions.findLatest(session.id);
   const current = previous?.content ?? emptyUnderstanding();
 
@@ -166,11 +169,17 @@ export async function runTurn(
 
   // Guarded so a strategy calling it twice fails immediately rather than
   // producing a revision built from two conflicting ID sequences.
+  // Which answer closed which gap. Derivable — a Question carries its gapId and
+  // an Answer carries its questionId — so the model is never asked to state it.
+  const resolvedBy = new Map<string, AnswerId>(
+    answered.map(({ question, answer }) => [question.gapId, answer.id]),
+  );
+
   let merged = false;
   const merge: Merge = (delta) => {
     if (merged) throw new Error('the delta was applied more than once in a single turn');
     merged = true;
-    return applyDelta(current, delta, { ids: deps.ids });
+    return applyDelta(current, delta, { resolvedBy });
   };
 
   const analysis = await deps.strategy(

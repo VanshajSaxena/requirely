@@ -1,4 +1,12 @@
-import { integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import {
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import type {
   QuestionOption,
   SourceOrigin,
@@ -69,20 +77,32 @@ export const sessions = pgTable('sessions', {
   updatedAt: timestamp('updated_at', MILLISECOND_UTC).notNull(),
 });
 
-export const sources = pgTable('sources', {
-  id: text('id').primaryKey(),
-  sessionId: text('session_id')
-    .notNull()
-    .references(() => sessions.id, { onDelete: 'cascade' }),
-  kind: text('kind').notNull(),
-  status: text('status').notNull(),
-  derivedBy: text('derived_by').notNull(),
-  origin: jsonb('origin').$type<SourceOrigin>().notNull(),
-  normalizedText: text('normalized_text'),
-  segments: jsonb('segments').$type<TranscriptSegment[] | null>(),
-  failureReason: text('failure_reason'),
-  ingestedAt: timestamp('ingested_at', MILLISECOND_UTC).notNull(),
-});
+/**
+ * `PRIMARY KEY (session_id, id)` with `id = 'src-1'`.
+ *
+ * A source belongs to exactly one session — the FK is already NOT NULL with
+ * cascade — so a session-scoped id is the honest model. It also makes the one
+ * table primary key a model must emit (`provenance.sourceId`) short enough to
+ * copy back reliably. Nothing FK-references `sources`, so this costs no ripple.
+ */
+export const sources = pgTable(
+  'sources',
+  {
+    id: text('id').notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    status: text('status').notNull(),
+    derivedBy: text('derived_by').notNull(),
+    origin: jsonb('origin').$type<SourceOrigin>().notNull(),
+    normalizedText: text('normalized_text'),
+    segments: jsonb('segments').$type<TranscriptSegment[] | null>(),
+    failureReason: text('failure_reason'),
+    ingestedAt: timestamp('ingested_at', MILLISECOND_UTC).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.sessionId, table.id] })],
+);
 
 export const understandingRevisions = pgTable(
   'understanding_revisions',

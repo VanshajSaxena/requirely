@@ -27,11 +27,18 @@ export interface SessionRepository {
   listTurns(sessionId: SessionId): Promise<readonly Turn[]>;
 }
 
-/** Ingestion happens outside a turn, so sources keep their own writes. */
+/**
+ * Ingestion happens outside a turn, so sources keep their own writes.
+ *
+ * `findById` takes a session because a source id is only unique *within* a
+ * session (`src-1`, `src-2`). That is deliberate: `provenance.sourceId` is the
+ * one table primary key a model has to emit, and a 40-character UUID on every
+ * requirement it adds was the single largest transcription risk in the system.
+ */
 export interface SourceRepository {
   add(source: Source): Promise<void>;
   save(source: Source): Promise<void>;
-  findById(id: SourceId): Promise<Source | null>;
+  findById(sessionId: SessionId, id: SourceId): Promise<Source | null>;
   listBySession(sessionId: SessionId): Promise<readonly Source[]>;
 }
 

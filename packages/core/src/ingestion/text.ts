@@ -1,5 +1,6 @@
 import {
   type Clock,
+  ID_PREFIX,
   type IdGenerator,
   type SessionId,
   Source,
@@ -21,6 +22,13 @@ export interface IngestTextInput {
   readonly sessionId: SessionId;
   readonly label: string;
   readonly text: string;
+  /**
+   * Position of this source within its session, 1-based — the id becomes
+   * `src-{ordinal}`. Supplied by the caller because it already holds the
+   * repository; sources are append-only, so `count + 1` is monotonic, and a
+   * concurrent-ingest race is caught by the composite primary key.
+   */
+  readonly ordinal: number;
   /** Defaults to plain text; pass `code`, `conversation`, etc. when known. */
   readonly kind?: SourceKind;
 }
@@ -32,7 +40,7 @@ export interface IngestContext {
 
 export function ingestText(input: IngestTextInput, ctx: IngestContext): Source {
   return Source.parse({
-    id: SourceId.parse(ctx.ids.next('source')),
+    id: SourceId.parse(`${ID_PREFIX.source}-${input.ordinal}`),
     sessionId: input.sessionId,
     kind: input.kind ?? 'text',
     status: 'normalized',

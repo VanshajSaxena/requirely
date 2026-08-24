@@ -53,7 +53,7 @@ const answerId = (value: string) => AnswerId.parse(value);
 export const fixtures = {
   session: (overrides: Record<string, unknown> = {}): Session =>
     Session.parse({
-      id: 'ses_1',
+      id: 'ses-1',
       title: 'Requirely',
       status: 'gathering',
       questionBudget: 12,
@@ -65,8 +65,8 @@ export const fixtures = {
 
   source: (overrides: Record<string, unknown> = {}): Source =>
     Source.parse({
-      id: 'src_1',
-      sessionId: 'ses_1',
+      id: 'src-1',
+      sessionId: 'ses-1',
       kind: 'audio',
       status: 'normalized',
       derivedBy: 'transcription',
@@ -80,8 +80,8 @@ export const fixtures = {
   /** A complete, internally consistent turn — the checks in TurnCommit enforce that. */
   commit: (overrides: { index?: number; sessionStatus?: string } = {}): TurnCommit => {
     const index = overrides.index ?? 0;
-    const revisionId = `rev_${index + 1}`;
-    const turnId = `trn_${index + 1}`;
+    const revisionId = `rev-${index + 1}`;
+    const turnId = `trn-${index + 1}`;
 
     return TurnCommit.parse({
       session: fixtures.session({
@@ -91,7 +91,7 @@ export const fixtures = {
       }),
       revision: {
         id: revisionId,
-        sessionId: 'ses_1',
+        sessionId: 'ses-1',
         revision: index,
         producedByTurnId: turnId,
         createdAt: AT,
@@ -99,15 +99,15 @@ export const fixtures = {
           product: { name: 'Requirely' },
           requirements: [
             {
-              id: 'req_1',
+              id: 'req-1',
               statement: 'Users sign in via SSO',
               kind: 'functional',
-              provenance: [{ sourceId: 'src_1', quote: 'We need SSO.' }],
+              provenance: [{ sourceId: 'src-1', quote: 'We need SSO.' }],
             },
           ],
           gaps: [
             {
-              id: 'gap_1',
+              id: 'gap-1',
               dimension: 'acceptance',
               topic: 'done criteria',
               description: 'unknown',
@@ -119,12 +119,12 @@ export const fixtures = {
       },
       turn: {
         id: turnId,
-        sessionId: 'ses_1',
+        sessionId: 'ses-1',
         index,
         trigger: 'initial',
-        inputSourceIds: ['src_1'],
+        inputSourceIds: ['src-1'],
         inputAnswerIds: [],
-        understandingBefore: index === 0 ? null : `rev_${index}`,
+        understandingBefore: index === 0 ? null : `rev-${index}`,
         understandingAfter: revisionId,
         verdict: {
           sufficient: false,
@@ -150,15 +150,15 @@ export const fixtures = {
       },
       questions: [
         {
-          id: `qst_${index + 1}`,
-          sessionId: 'ses_1',
+          id: `qst-${index + 1}`,
+          sessionId: 'ses-1',
           turnId,
-          gapId: 'gap_1',
+          gapId: 'gap-1',
           text: 'How would you know this worked?',
           mode: 'single',
           options: [
-            { id: `opt_${index * 2 + 1}`, label: 'A buildable spec' },
-            { id: `opt_${index * 2 + 2}`, label: 'Fewer clarifications', elaboration: 'Measured.' },
+            { id: `opt-${index * 2 + 1}`, label: 'A buildable spec' },
+            { id: `opt-${index * 2 + 2}`, label: 'Fewer clarifications', elaboration: 'Measured.' },
           ],
           askedAt: AT,
         },
@@ -232,24 +232,28 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         const source = fixtures.source();
         await stores.sources.add(source);
 
-        expect(await stores.sources.findById(source.id)).toEqual(source);
+        expect(await stores.sources.findById(source.sessionId, source.id)).toEqual(source);
       });
 
       it('preserves a null segments array distinctly from an empty one', async () => {
-        await stores.sources.add(fixtures.source({ id: 'src_1', segments: null }));
-        await stores.sources.add(fixtures.source({ id: 'src_2', segments: [] }));
+        await stores.sources.add(fixtures.source({ id: 'src-1', segments: null }));
+        await stores.sources.add(fixtures.source({ id: 'src-2', segments: [] }));
 
-        expect((await stores.sources.findById(sourceId('src_1')))?.segments).toBeNull();
-        expect((await stores.sources.findById(sourceId('src_2')))?.segments).toEqual([]);
+        expect(
+          (await stores.sources.findById(fixtures.session().id, sourceId('src-1')))?.segments,
+        ).toBeNull();
+        expect(
+          (await stores.sources.findById(fixtures.session().id, sourceId('src-2')))?.segments,
+        ).toEqual([]);
       });
 
       it('lists only the sources of the requested session', async () => {
-        await stores.sessions.create(fixtures.session({ id: 'ses_2' }));
-        await stores.sources.add(fixtures.source({ id: 'src_1' }));
-        await stores.sources.add(fixtures.source({ id: 'src_2', sessionId: 'ses_2' }));
+        await stores.sessions.create(fixtures.session({ id: 'ses-2' }));
+        await stores.sources.add(fixtures.source({ id: 'src-1' }));
+        await stores.sources.add(fixtures.source({ id: 'src-2', sessionId: 'ses-2' }));
 
         const listed = await stores.sources.listBySession(fixtures.session().id);
-        expect(listed.map((s) => s.id)).toEqual(['src_1']);
+        expect(listed.map((s) => s.id)).toEqual(['src-1']);
       });
     });
 
@@ -270,7 +274,7 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         expect(turns).toEqual([commit.turn]);
 
         const question = commit.questions[0];
-        expect(await stores.inquiry.findQuestion(questionId('qst_1'))).toEqual(question);
+        expect(await stores.inquiry.findQuestion(questionId('qst-1'))).toEqual(question);
       });
 
       it('round-trips the understanding content through JSONB unchanged', async () => {
@@ -281,7 +285,7 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         expect(stored?.content).toEqual(commit.revision.content);
         // Provenance is the field most likely to be quietly dropped.
         expect(stored?.content.requirements[0]?.provenance).toEqual([
-          { sourceId: 'src_1', quote: 'We need SSO.', note: null },
+          { sourceId: 'src-1', quote: 'We need SSO.', note: null },
         ]);
       });
 
@@ -289,7 +293,7 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         const commit = fixtures.commit();
         const broken = {
           ...commit,
-          turn: { ...commit.turn, understandingAfter: 'rev_999' },
+          turn: { ...commit.turn, understandingAfter: 'rev-999' },
         };
 
         await expect(stores.committer.commit(broken as TurnCommit)).rejects.toThrow();
@@ -305,11 +309,11 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         // reject it — and the question must not survive the failure.
         const clashing = TurnCommit.parse({
           ...first,
-          questions: [{ ...first.questions[0], id: 'qst_ghost' }],
+          questions: [{ ...first.questions[0], id: 'qst-ghost' }],
         });
 
         await expect(stores.committer.commit(clashing)).rejects.toThrow();
-        expect(await stores.inquiry.findQuestion(questionId('qst_ghost'))).toBeNull();
+        expect(await stores.inquiry.findQuestion(questionId('qst-ghost'))).toBeNull();
         expect(await stores.sessions.listTurns(first.session.id)).toHaveLength(1);
       });
 
@@ -337,9 +341,9 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         expect(await stores.inquiry.listUnansweredQuestions(fixtures.session().id)).toHaveLength(1);
 
         const answer = Answer.parse({
-          id: 'ans_1',
-          questionId: 'qst_1',
-          selectedOptionIds: ['opt_1'],
+          id: 'ans-1',
+          questionId: 'qst-1',
+          selectedOptionIds: ['opt-1'],
           answeredAt: AT,
         });
         await stores.committer.commit(
@@ -347,18 +351,18 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
             ...fixtures.commit({ index: 1 }),
             questions: [],
             answers: [answer],
-            turn: { ...fixtures.commit({ index: 1 }).turn, inputAnswerIds: ['ans_1'] },
+            turn: { ...fixtures.commit({ index: 1 }).turn, inputAnswerIds: ['ans-1'] },
           }),
         );
 
         expect(await stores.inquiry.listUnansweredQuestions(fixtures.session().id)).toEqual([]);
-        expect(await stores.inquiry.findAnswer(answerId('ans_1'))).toEqual(answer);
+        expect(await stores.inquiry.findAnswer(answerId('ans-1'))).toEqual(answer);
       });
 
       it('lists answers belonging to the session', async () => {
         const answer = Answer.parse({
-          id: 'ans_1',
-          questionId: 'qst_1',
+          id: 'ans-1',
+          questionId: 'qst-1',
           customText: 'Something else entirely',
           answeredAt: AT,
         });
@@ -367,7 +371,7 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
             ...fixtures.commit({ index: 1 }),
             questions: [],
             answers: [answer],
-            turn: { ...fixtures.commit({ index: 1 }).turn, inputAnswerIds: ['ans_1'] },
+            turn: { ...fixtures.commit({ index: 1 }).turn, inputAnswerIds: ['ans-1'] },
           }),
         );
 
@@ -376,7 +380,7 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
       });
 
       it('reconstructs allowsCustom rather than trusting storage for an invariant', async () => {
-        const question: Question | null = await stores.inquiry.findQuestion(questionId('qst_1'));
+        const question: Question | null = await stores.inquiry.findQuestion(questionId('qst-1'));
         expect(question?.allowsCustom).toBe(true);
       });
     });

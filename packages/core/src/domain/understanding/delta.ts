@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import {
-  AnswerId,
   AssumptionId,
   ConstraintId,
   ContradictionId,
@@ -79,10 +78,16 @@ export const GapRevision = patchOf(GapDraft).extend({
   reason: z.string().min(1),
 });
 
-/** Closing a gap is distinct from deleting one: it records what was learned. */
+/**
+ * Closing a gap is distinct from deleting one: it records what was learned.
+ *
+ * No `resolvedByAnswerId` here. The engine derives it — a `Question` carries its
+ * `gapId` and an `Answer` carries its `questionId` — so asking a model to
+ * transcribe a 40-character id it can only get wrong adds risk and no
+ * information. Removing a reference beats shortening one.
+ */
 export const GapResolution = z.object({
   id: GapId,
-  resolvedByAnswerId: AnswerId.nullable().default(null),
   resolution: z.string().min(1),
 });
 export type GapResolution = z.infer<typeof GapResolution>;

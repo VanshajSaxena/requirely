@@ -33,7 +33,7 @@ CREATE TABLE "sessions" (
 );
 --> statement-breakpoint
 CREATE TABLE "sources" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" text NOT NULL,
 	"session_id" text NOT NULL,
 	"kind" text NOT NULL,
 	"status" text NOT NULL,
@@ -42,7 +42,8 @@ CREATE TABLE "sources" (
 	"normalized_text" text,
 	"segments" jsonb,
 	"failure_reason" text,
-	"ingested_at" timestamp (3) with time zone NOT NULL
+	"ingested_at" timestamp (3) with time zone NOT NULL,
+	CONSTRAINT "sources_session_id_id_pk" PRIMARY KEY("session_id","id")
 );
 --> statement-breakpoint
 CREATE TABLE "turns" (

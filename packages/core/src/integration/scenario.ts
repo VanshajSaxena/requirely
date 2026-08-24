@@ -14,7 +14,7 @@ import type { StrategyName } from '../engine/strategies.ts';
  * *same* scenario — otherwise "it resumes correctly" and "it runs correctly"
  * would be claims about two different sessions.
  *
- * The fixtures reference ids like `gap_1` before they exist. That works because
+ * The fixtures reference ids like `gap-1` before they exist. That works because
  * the tests use a sequential id generator, which is itself only possible because
  * identity enters through a port.
  */
@@ -38,7 +38,7 @@ export const TURN_1_DELTA = {
       {
         statement: 'Ingest audio, text and documents into one understanding',
         kind: 'functional',
-        provenance: [{ sourceId: 'src_1', quote: 'dump everything you know' }],
+        provenance: [{ sourceId: 'src-1', quote: 'dump everything you know' }],
       },
     ],
   },
@@ -71,7 +71,7 @@ export const TURN_1_ASSESSMENT = {
 export const TURN_1_QUESTIONS = {
   questions: [
     {
-      gapId: 'gap_1',
+      gapId: 'gap-1',
       text: 'How would you know Requirely had worked?',
       mode: 'single',
       options: [
@@ -80,7 +80,7 @@ export const TURN_1_QUESTIONS = {
       ],
     },
     {
-      gapId: 'gap_2',
+      gapId: 'gap-2',
       text: 'Who is the primary user?',
       mode: 'multiple',
       options: [{ label: 'Product managers' }, { label: 'Engineers' }, { label: 'Founders' }],
@@ -100,11 +100,11 @@ export const TURN_2_DELTA = {
   gaps: {
     resolve: [
       {
-        id: 'gap_1',
-        resolvedByAnswerId: 'ans_1',
+        id: 'gap-1',
+        resolvedByAnswerId: 'ans-1',
         resolution: 'A spec buildable without follow-up.',
       },
-      { id: 'gap_2', resolvedByAnswerId: 'ans_2', resolution: 'Product managers and founders.' },
+      { id: 'gap-2', resolvedByAnswerId: 'ans-2', resolution: 'Product managers and founders.' },
     ],
   },
 };
@@ -156,7 +156,7 @@ export function scriptFor(strategy: StrategyName): FakeScript {
 export function answerAll(questions: readonly Question[]): Answer[] {
   return questions.map((question, index) =>
     Answer.parse({
-      id: `ans_${index + 1}`,
+      id: `ans-${index + 1}`,
       questionId: question.id,
       selectedOptionIds: question.options[0] ? [question.options[0].id] : [],
       answeredAt: AT,

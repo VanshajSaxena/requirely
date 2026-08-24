@@ -13,6 +13,6 @@ import { type EntityKind, ID_PREFIX, type IdGenerator } from '../../domain/index
  */
 export function uuidIdGenerator(): IdGenerator {
   return {
-    next: (kind: EntityKind): string => `${ID_PREFIX[kind]}_${uuidv7()}`,
+    next: (kind: EntityKind): string => `${ID_PREFIX[kind]}-${uuidv7()}`,
   };
 }

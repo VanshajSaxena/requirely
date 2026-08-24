@@ -165,15 +165,24 @@ export function postgresSessionRepository(db: Database): SessionRepository {
 export function postgresSourceRepository(db: Database): SourceRepository {
   const upsert = async (source: Source) => {
     const values = sourceValues(source);
-    await db.insert(sources).values(values).onConflictDoUpdate({ target: sources.id, set: values });
+    await db
+      .insert(sources)
+      .values(values)
+      // Conflict target is the composite key, since a source id is only unique
+      // within its session.
+      .onConflictDoUpdate({ target: [sources.sessionId, sources.id], set: values });
   };
 
   return {
     add: upsert,
     save: upsert,
 
-    async findById(id: SourceId) {
-      const [row] = await db.select().from(sources).where(eq(sources.id, id)).limit(1);
+    async findById(sessionId: SessionId, id: SourceId) {
+      const [row] = await db
+        .select()
+        .from(sources)
+        .where(and(eq(sources.sessionId, sessionId), eq(sources.id, id)))
+        .limit(1);
       return row ? toSource(row) : null;
     },
 

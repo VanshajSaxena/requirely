@@ -28,7 +28,7 @@ export function sequentialIdGenerator(start = 1): IdGenerator {
     next(kind: EntityKind): string {
       const next = (counters.get(kind) ?? start - 1) + 1;
       counters.set(kind, next);
-      return `${ID_PREFIX[kind]}_${next}`;
+      return `${ID_PREFIX[kind]}-${next}`;
     },
   };
 }

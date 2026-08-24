@@ -1,17 +1,26 @@
-import type { IdGenerator } from '../ports/id-generator.ts';
 import { DuplicateIdError, UnknownReferenceError } from '../shared/errors.ts';
 import {
+  type AnswerId,
   AssumptionId,
   ConstraintId,
   ContradictionId,
   GapId,
+  ID_PREFIX,
   RequirementId,
 } from '../shared/ids.ts';
 import type { UnderstandingDelta } from './delta.ts';
-import { type Gap, type ResolvedGap, Understanding } from './understanding.ts';
+import { type Gap, type NextIds, type ResolvedGap, Understanding } from './understanding.ts';
 
 export interface ApplyDeltaContext {
-  readonly ids: IdGenerator;
+  /**
+   * Which answer closed which gap, keyed by gap id.
+   *
+   * The engine supplies this rather than the model, because it is derivable:
+   * a `Question` carries its `gapId` and an `Answer` carries its `questionId`,
+   * so gap → answer is a lookup. Asking a model to transcribe a 40-character
+   * `AnswerId` to state something already known is pure risk for no information.
+   */
+  readonly resolvedBy?: ReadonlyMap<string, AnswerId> | undefined;
 }
 
 /**
@@ -44,7 +53,7 @@ interface CollectionOps<E extends { readonly id: string }> {
 /**
  * Applies add / revise / remove to one collection.
  *
- * Unknown IDs throw rather than being ignored. A model that invents `req_99`
+ * Unknown IDs throw rather than being ignored. A model that invents `req-99`
  * must fail loudly — silently discarding the operation would mean the delta was
  * only partly applied while the turn still reported success, and the divergence
  * would surface many turns later as an inexplicable missing requirement.
@@ -80,10 +89,11 @@ function mergeCollection<E extends { readonly id: string }>(
 
   for (const draft of ops.add) {
     const id = mintId();
-    // A real IdGenerator never repeats, but leaving the collection's uniqueness
-    // to rest on a component the domain cannot inspect is how you get two
-    // entries sharing an id — which makes every later `revise` ambiguous and
-    // silently picks whichever one the map happened to keep.
+    // The counter makes this unreachable in normal operation. It stays as a
+    // guard against a document whose counter disagrees with its contents —
+    // hand-edited JSONB, a bad migration — because two entries sharing an id
+    // makes every later `revise` ambiguous and silently picks whichever one
+    // the map happened to keep.
     if (taken.has(id)) {
       throw new DuplicateIdError(collection, id);
     }
@@ -97,19 +107,28 @@ function mergeCollection<E extends { readonly id: string }>(
 /**
  * Produces the next Understanding from the current one plus a delta.
  *
- * Pure and total: given the same inputs and the same IdGenerator sequence it
- * always produces the same output, and it either applies the whole delta or
- * throws. There is no partial-application path.
+ * Pure and total: it is now a function of `(current, delta)` alone — no
+ * `IdGenerator`, because ids are minted from counters carried in the document
+ * itself. That makes it *more* deterministic than before, not less.
+ *
+ * Either the whole delta applies or it throws. There is no partial path.
  */
 export function applyDelta(
   current: Understanding,
   delta: UnderstandingDelta,
-  ctx: ApplyDeltaContext,
+  ctx: ApplyDeltaContext = {},
 ): Understanding {
+  // Mutated as ids are handed out, then written back as the next document's
+  // counters. Local to this call, so purity is preserved.
+  const counters: NextIds = { ...current.nextIds };
+
   const mint =
-    <T>(kind: Parameters<IdGenerator['next']>[0], brand: { parse: (v: unknown) => T }) =>
-    (): T =>
-      brand.parse(ctx.ids.next(kind));
+    <T>(kind: keyof NextIds, brand: { parse: (v: unknown) => T }) =>
+    (): T => {
+      const ordinal = counters[kind];
+      counters[kind] = ordinal + 1;
+      return brand.parse(`${ID_PREFIX[kind]}-${ordinal}`);
+    };
 
   const requirements = mergeCollection(
     'requirement',
@@ -156,7 +175,7 @@ export function applyDelta(
     openGaps.delete(resolution.id);
     newlyResolved.push({
       ...gap,
-      resolvedByAnswerId: resolution.resolvedByAnswerId,
+      resolvedByAnswerId: ctx.resolvedBy?.get(resolution.id) ?? null,
       resolution: resolution.resolution,
     });
   }
@@ -176,5 +195,6 @@ export function applyDelta(
     contradictions,
     gaps: [...openGaps.values()],
     resolvedGaps: [...current.resolvedGaps, ...newlyResolved],
+    nextIds: counters,
   });
 }

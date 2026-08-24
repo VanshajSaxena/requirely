@@ -32,32 +32,32 @@ const verdict = SufficiencyVerdict.parse({
   rationale: 'Not yet sufficient: coverage below the 0.70 bar for: acceptance (0.25).',
   coverage: [{ dimension: 'acceptance', score: 0.25, rationale: 'no acceptance criteria stated' }],
   shortfalls: ['acceptance'],
-  blockingGapIds: ['gap_1'],
+  blockingGapIds: ['gap-1'],
   questionsAsked: 2,
   questionBudget: 12,
   budgetExhausted: false,
 });
 
 const revision = UnderstandingRevision.parse({
-  id: 'rev_1',
-  sessionId: 'ses_1',
+  id: 'rev-1',
+  sessionId: 'ses-1',
   revision: 1,
-  producedByTurnId: 'trn_1',
+  producedByTurnId: 'trn-1',
   createdAt: timestamp,
   content: {
     product: { name: 'Requirely', users: [{ label: 'Product managers', needs: ['faster specs'] }] },
     requirements: [
       {
-        id: 'req_1',
+        id: 'req-1',
         statement: 'Users sign in via SSO',
         kind: 'functional',
-        provenance: [{ sourceId: 'src_1', quote: 'we use Okta' }],
+        provenance: [{ sourceId: 'src-1', quote: 'we use Okta' }],
       },
     ],
-    constraints: [{ id: 'con_1', statement: 'Must run on-premise', category: 'technical' }],
+    constraints: [{ id: 'con-1', statement: 'Must run on-premise', category: 'technical' }],
     assumptions: [
       {
-        id: 'asm_1',
+        id: 'asm-1',
         statement: 'English only at launch',
         basis: 'no locale mentioned',
         risk: 'low',
@@ -65,14 +65,14 @@ const revision = UnderstandingRevision.parse({
     ],
     contradictions: [
       {
-        id: 'ctr_1',
+        id: 'ctr-1',
         description: 'Retention stated as both 30 and 90 days',
-        between: [{ sourceId: 'src_1' }, { sourceId: 'src_2' }],
+        between: [{ sourceId: 'src-1' }, { sourceId: 'src-2' }],
       },
     ],
     gaps: [
       {
-        id: 'gap_1',
+        id: 'gap-1',
         dimension: 'acceptance',
         topic: 'sign-out',
         description: 'unknown',
@@ -82,13 +82,13 @@ const revision = UnderstandingRevision.parse({
     ],
     resolvedGaps: [
       {
-        id: 'gap_0',
+        id: 'gap-0',
         dimension: 'purpose',
         topic: 'audience',
         description: 'unknown',
         blocking: false,
         impact: 'low',
-        resolvedByAnswerId: 'ans_1',
+        resolvedByAnswerId: 'ans-1',
         resolution: 'Internal teams first.',
       },
     ],
@@ -100,7 +100,7 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
     'Session',
     Session,
     Session.parse({
-      id: 'ses_1',
+      id: 'ses-1',
       status: 'gathering',
       questionBudget: 12,
       createdAt: timestamp,
@@ -111,8 +111,8 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
     'Source',
     Source,
     Source.parse({
-      id: 'src_1',
-      sessionId: 'ses_1',
+      id: 'src-1',
+      sessionId: 'ses-1',
       kind: 'audio',
       status: 'normalized',
       derivedBy: 'transcription',
@@ -129,7 +129,7 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
     UnderstandingAssessment,
     UnderstandingAssessment.parse({
       summary: 'partial',
-      blockingGapIds: ['gap_1'],
+      blockingGapIds: ['gap-1'],
       coverage: [{ dimension: 'purpose', score: 0.9, rationale: 'clear' }],
     }),
   ],
@@ -140,25 +140,25 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
       product: { name: 'Requirely' },
       requirements: {
         add: [{ statement: 'Export to PDF', kind: 'functional' }],
-        revise: [{ id: 'req_1', priority: 'must', reason: 'confirmed' }],
-        remove: [{ id: 'req_2', reason: 'contradicted' }],
+        revise: [{ id: 'req-1', priority: 'must', reason: 'confirmed' }],
+        remove: [{ id: 'req-2', reason: 'contradicted' }],
       },
-      gaps: { resolve: [{ id: 'gap_1', resolvedByAnswerId: 'ans_1', resolution: 'answered' }] },
+      gaps: { resolve: [{ id: 'gap-1', resolvedByAnswerId: 'ans-1', resolution: 'answered' }] },
     }),
   ],
   [
     'Question',
     Question,
     Question.parse({
-      id: 'qst_1',
-      sessionId: 'ses_1',
-      turnId: 'trn_1',
-      gapId: 'gap_1',
+      id: 'qst-1',
+      sessionId: 'ses-1',
+      turnId: 'trn-1',
+      gapId: 'gap-1',
       text: 'Who can create an account?',
       mode: 'single',
       options: [
-        { id: 'opt_1', label: 'Anyone' },
-        { id: 'opt_2', label: 'Invited only', elaboration: 'Requires an invite flow.' },
+        { id: 'opt-1', label: 'Anyone' },
+        { id: 'opt-2', label: 'Invited only', elaboration: 'Requires an invite flow.' },
       ],
       askedAt: timestamp,
     }),
@@ -167,9 +167,9 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
     'Answer',
     Answer,
     Answer.parse({
-      id: 'ans_1',
-      questionId: 'qst_1',
-      selectedOptionIds: ['opt_2'],
+      id: 'ans-1',
+      questionId: 'qst-1',
+      selectedOptionIds: ['opt-2'],
       additionalContext: 'Admins send invites.',
       answeredAt: timestamp,
     }),
@@ -178,12 +178,12 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
     'Turn',
     Turn,
     Turn.parse({
-      id: 'trn_1',
-      sessionId: 'ses_1',
+      id: 'trn-1',
+      sessionId: 'ses-1',
       index: 0,
       trigger: 'initial',
-      inputSourceIds: ['src_1'],
-      understandingAfter: 'rev_1',
+      inputSourceIds: ['src-1'],
+      understandingAfter: 'rev-1',
       verdict,
       usage: [
         { provider: 'anthropic', model: 'claude-opus-5', inputTokens: 900, outputTokens: 120 },

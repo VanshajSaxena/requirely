@@ -34,6 +34,14 @@ import {
 
 const clone = <T>(value: T): T => structuredClone(value);
 
+/**
+ * Source ids are unique per session, not globally, so the in-memory map needs a
+ * compound key — mirroring the composite primary key Postgres uses. A plain `id`
+ * key would let two sessions' `src-1` collide here while working in Postgres,
+ * which is the kind of divergence the shared contract suite exists to catch.
+ */
+const sourceKey = (sessionId: string, id: string): string => `${sessionId}\u0000${id}`;
+
 interface Tables {
   readonly sessions: Map<string, Session>;
   readonly turns: Map<string, Turn[]>;
@@ -84,13 +92,13 @@ export function inMemoryStores(): MemoryStores {
 
   const sources: SourceRepository = {
     async add(source) {
-      db.sources.set(source.id, clone(source));
+      db.sources.set(sourceKey(source.sessionId, source.id), clone(source));
     },
     async save(source) {
-      db.sources.set(source.id, clone(source));
+      db.sources.set(sourceKey(source.sessionId, source.id), clone(source));
     },
-    async findById(id: SourceId) {
-      const found = db.sources.get(id);
+    async findById(sessionId: SessionId, id: SourceId) {
+      const found = db.sources.get(sourceKey(sessionId, id));
       return found ? clone(found) : null;
     },
     async listBySession(sessionId: SessionId) {

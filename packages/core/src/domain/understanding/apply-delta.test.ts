@@ -1,17 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { DuplicateIdError, UnknownReferenceError } from '../shared/errors.ts';
-import { sequentialIdGenerator } from '../testing/fakes.ts';
+import { AnswerId } from '../shared/ids.ts';
 import { applyDelta } from './apply-delta.ts';
 import { UnderstandingDelta } from './delta.ts';
 import { emptyUnderstanding, type Understanding } from './understanding.ts';
 
-const ctx = () => ({ ids: sequentialIdGenerator() });
 const delta = (input: unknown): UnderstandingDelta => UnderstandingDelta.parse(input);
 
 const requirementDraft = (statement: string, overrides: Record<string, unknown> = {}) => ({
   statement,
   kind: 'functional',
-  provenance: [{ sourceId: 'src_1', quote: 'from the transcript' }],
+  provenance: [{ sourceId: 'src-1', quote: 'from the transcript' }],
   ...overrides,
 });
 
@@ -32,7 +31,6 @@ function seeded(): Understanding {
       requirements: { add: [requirementDraft('Users sign in via SSO')] },
       gaps: { add: [gapDraft('sign-out behaviour')] },
     }),
-    ctx(),
   );
 }
 
@@ -41,14 +39,14 @@ describe('applyDelta — additions', () => {
     const result = seeded();
 
     expect(result.requirements).toHaveLength(1);
-    expect(result.requirements[0]?.id).toBe('req_1');
+    expect(result.requirements[0]?.id).toBe('req-1');
     expect(result.requirements[0]?.statement).toBe('Users sign in via SSO');
-    expect(result.gaps[0]?.id).toBe('gap_1');
+    expect(result.gaps[0]?.id).toBe('gap-1');
   });
 
   it('treats an empty delta as the identity function', () => {
     const before = seeded();
-    expect(applyDelta(before, delta({}), ctx())).toEqual(before);
+    expect(applyDelta(before, delta({}))).toEqual(before);
   });
 
   it('produces output that survives a JSONB round-trip unchanged', () => {
@@ -65,10 +63,9 @@ describe('applyDelta — revisions', () => {
       before,
       delta({
         requirements: {
-          revise: [{ id: 'req_1', priority: 'must', reason: 'confirmed by the answer to Q1' }],
+          revise: [{ id: 'req-1', priority: 'must', reason: 'confirmed by the answer to Q1' }],
         },
       }),
-      ctx(),
     );
 
     expect(after.requirements[0]?.priority).toBe('must');
@@ -82,59 +79,83 @@ describe('applyDelta — revisions', () => {
     const before = applyDelta(
       emptyUnderstanding(),
       delta({ requirements: { add: [requirementDraft('X', { rationale: 'because' })] } }),
-      ctx(),
     );
 
     const untouched = applyDelta(
       before,
-      delta({ requirements: { revise: [{ id: 'req_1', reason: 'unrelated tweak' }] } }),
-      ctx(),
+      delta({ requirements: { revise: [{ id: 'req-1', reason: 'unrelated tweak' }] } }),
     );
     expect(untouched.requirements[0]?.rationale).toBe('because');
 
     const cleared = applyDelta(
       before,
       delta({
-        requirements: { revise: [{ id: 'req_1', rationale: null, reason: 'no longer applies' }] },
+        requirements: { revise: [{ id: 'req-1', rationale: null, reason: 'no longer applies' }] },
       }),
-      ctx(),
     );
     expect(cleared.requirements[0]?.rationale).toBeNull();
   });
 
-  it('keeps ids stable across successive turns', () => {
-    // One generator across both turns, as a running engine has. An earlier
-    // version of this test built a fresh generator per turn and then asserted
-    // `['req_1', 'req_1']` — documenting an id collision as correct behaviour.
-    const shared = { ids: sequentialIdGenerator() };
-
+  it('keeps ids stable and increasing across successive turns', () => {
+    // No shared generator to thread through: the counter travels in the
+    // document, so two independent calls cannot collide by construction.
     const turn1 = applyDelta(
       emptyUnderstanding(),
       delta({ requirements: { add: [requirementDraft('Users sign in via SSO')] } }),
-      shared,
     );
     const turn2 = applyDelta(
       turn1,
       delta({ requirements: { add: [requirementDraft('Users can revoke a session')] } }),
-      shared,
     );
 
-    expect(turn2.requirements.map((r) => r.id)).toEqual(['req_1', 'req_2']);
+    expect(turn2.requirements.map((r) => r.id)).toEqual(['req-1', 'req-2']);
     expect(turn2.requirements[0]?.statement).toBe('Users sign in via SSO');
+    expect(turn2.nextIds.requirement).toBe(3);
   });
 
-  it('refuses to mint an id that a collection already uses', () => {
-    const turn1 = seeded();
+  it('never reissues the id of something that was removed', () => {
+    // `max + 1` would hand out `req-1` again here. A Question from an earlier
+    // turn still storing that id would silently repoint at a different entity.
+    const seededOnce = applyDelta(
+      emptyUnderstanding(),
+      delta({ requirements: { add: [requirementDraft('Doomed requirement')] } }),
+    );
+    const emptied = applyDelta(
+      seededOnce,
+      delta({ requirements: { remove: [{ id: 'req-1', reason: 'contradicted' }] } }),
+    );
+    const refilled = applyDelta(
+      emptied,
+      delta({ requirements: { add: [requirementDraft('Replacement')] } }),
+    );
 
-    // A generator that restarts hands back `req_1` a second time. Real
-    // generators do not, but the collection's uniqueness must not depend on
-    // that: two requirements sharing an id makes every later revise ambiguous.
+    expect(emptied.requirements).toHaveLength(0);
+    expect(refilled.requirements[0]?.id).toBe('req-2');
+  });
+
+  it('counts each collection independently', () => {
+    const result = applyDelta(
+      emptyUnderstanding(),
+      delta({
+        requirements: { add: [requirementDraft('A'), requirementDraft('B')] },
+        gaps: { add: [gapDraft('audience')] },
+      }),
+    );
+
+    expect(result.requirements.map((r) => r.id)).toEqual(['req-1', 'req-2']);
+    expect(result.gaps.map((g) => g.id)).toEqual(['gap-1']);
+  });
+
+  it('rejects a document whose counter disagrees with its contents', () => {
+    // Unreachable in normal operation; this is the guard against hand-edited
+    // JSONB or a bad migration, where the counter has been wound backwards.
+    const tampered = {
+      ...seeded(),
+      nextIds: { ...seeded().nextIds, requirement: 1 },
+    };
+
     expect(() =>
-      applyDelta(
-        turn1,
-        delta({ requirements: { add: [requirementDraft('Colliding requirement')] } }),
-        ctx(),
-      ),
+      applyDelta(tampered, delta({ requirements: { add: [requirementDraft('Collides')] } })),
     ).toThrow(DuplicateIdError);
   });
 });
@@ -143,8 +164,7 @@ describe('applyDelta — removals and unknown references', () => {
   it('removes an entry', () => {
     const after = applyDelta(
       seeded(),
-      delta({ requirements: { remove: [{ id: 'req_1', reason: 'contradicted by Q2' }] } }),
-      ctx(),
+      delta({ requirements: { remove: [{ id: 'req-1', reason: 'contradicted by Q2' }] } }),
     );
     expect(after.requirements).toHaveLength(0);
   });
@@ -153,8 +173,7 @@ describe('applyDelta — removals and unknown references', () => {
     expect(() =>
       applyDelta(
         seeded(),
-        delta({ requirements: { revise: [{ id: 'req_99', reason: 'hallucinated' }] } }),
-        ctx(),
+        delta({ requirements: { revise: [{ id: 'req-99', reason: 'hallucinated' }] } }),
       ),
     ).toThrow(UnknownReferenceError);
   });
@@ -166,16 +185,15 @@ describe('applyDelta — removals and unknown references', () => {
         delta({
           requirements: {
             remove: [
-              { id: 'req_98', reason: 'nope' },
-              { id: 'req_99', reason: 'nope' },
+              { id: 'req-98', reason: 'nope' },
+              { id: 'req-99', reason: 'nope' },
             ],
           },
         }),
-        ctx(),
       );
       expect.unreachable('should have thrown');
     } catch (error) {
-      expect((error as UnknownReferenceError).references).toEqual(['req_98', 'req_99']);
+      expect((error as UnknownReferenceError).references).toEqual(['req-98', 'req-99']);
     }
   });
 
@@ -187,10 +205,9 @@ describe('applyDelta — removals and unknown references', () => {
         delta({
           requirements: {
             add: [requirementDraft('Should not be applied')],
-            revise: [{ id: 'req_99', reason: 'hallucinated' }],
+            revise: [{ id: 'req-99', reason: 'hallucinated' }],
           },
         }),
-        ctx(),
       ),
     ).toThrow(UnknownReferenceError);
     expect(before.requirements).toHaveLength(1);
@@ -199,35 +216,47 @@ describe('applyDelta — removals and unknown references', () => {
 
 describe('applyDelta — gap resolution', () => {
   it('moves a resolved gap out of gaps and records what was learned', () => {
+    // The answer id comes from the caller's derived map, not from the delta —
+    // the model is never asked to transcribe it.
     const after = applyDelta(
       seeded(),
       delta({
         gaps: {
-          resolve: [
-            {
-              id: 'gap_1',
-              resolvedByAnswerId: 'ans_1',
-              resolution: 'Sessions end after 30 days of inactivity.',
-            },
-          ],
+          resolve: [{ id: 'gap-1', resolution: 'Sessions end after 30 days of inactivity.' }],
         },
       }),
-      ctx(),
+      { resolvedBy: new Map([['gap-1', AnswerId.parse('ans-1')]]) },
     );
 
     expect(after.gaps).toHaveLength(0);
     expect(after.resolvedGaps).toHaveLength(1);
-    expect(after.resolvedGaps[0]?.id).toBe('gap_1');
-    expect(after.resolvedGaps[0]?.resolvedByAnswerId).toBe('ans_1');
+    expect(after.resolvedGaps[0]?.id).toBe('gap-1');
+    expect(after.resolvedGaps[0]?.resolvedByAnswerId).toBe('ans-1');
     expect(after.resolvedGaps[0]?.topic).toBe('sign-out behaviour');
+  });
+
+  it('records a null answer id when no answer closed the gap', () => {
+    const after = applyDelta(
+      seeded(),
+      delta({ gaps: { resolve: [{ id: 'gap-1', resolution: 'closed by a new source' }] } }),
+    );
+    expect(after.resolvedGaps[0]?.resolvedByAnswerId).toBeNull();
+  });
+
+  it('ignores a resolvedByAnswerId the model tries to supply', () => {
+    // The field is not in the schema, so Zod strips it. Asserting that here
+    // pins the contract: the engine owns this value, not the model.
+    const parsed = UnderstandingDelta.parse({
+      gaps: { resolve: [{ id: 'gap-1', resolution: 'x', resolvedByAnswerId: 'ans-99' }] },
+    });
+    expect(parsed.gaps.resolve[0]).not.toHaveProperty('resolvedByAnswerId');
   });
 
   it('rejects resolving a gap that is not open', () => {
     expect(() =>
       applyDelta(
         seeded(),
-        delta({ gaps: { resolve: [{ id: 'gap_99', resolution: 'invented' }] } }),
-        ctx(),
+        delta({ gaps: { resolve: [{ id: 'gap-99', resolution: 'invented' }] } }),
       ),
     ).toThrow(UnknownReferenceError);
   });
@@ -235,19 +264,12 @@ describe('applyDelta — gap resolution', () => {
   it('accumulates resolved gaps across turns rather than replacing them', () => {
     const turn1 = applyDelta(
       seeded(),
-      delta({ gaps: { resolve: [{ id: 'gap_1', resolution: 'answered' }] } }),
-      ctx(),
+      delta({ gaps: { resolve: [{ id: 'gap-1', resolution: 'answered' }] } }),
     );
-    const turn2Ctx = ctx();
-    const withNewGap = applyDelta(
-      turn1,
-      delta({ gaps: { add: [gapDraft('data retention')] } }),
-      turn2Ctx,
-    );
+    const withNewGap = applyDelta(turn1, delta({ gaps: { add: [gapDraft('data retention')] } }));
     const turn2 = applyDelta(
       withNewGap,
-      delta({ gaps: { resolve: [{ id: 'gap_1', resolution: 'also answered' }] } }),
-      turn2Ctx,
+      delta({ gaps: { resolve: [{ id: 'gap-2', resolution: 'also answered' }] } }),
     );
 
     expect(turn2.resolvedGaps).toHaveLength(2);
@@ -260,14 +282,9 @@ describe('applyDelta — product summary', () => {
     const before = applyDelta(
       emptyUnderstanding(),
       delta({ product: { name: 'Requirely', purpose: 'Gather requirements faster' } }),
-      ctx(),
     );
 
-    const after = applyDelta(
-      before,
-      delta({ product: { oneLiner: 'Plan mode on steroids' } }),
-      ctx(),
-    );
+    const after = applyDelta(before, delta({ product: { oneLiner: 'Plan mode on steroids' } }));
 
     expect(after.product.name).toBe('Requirely');
     expect(after.product.purpose).toBe('Gather requirements faster');
@@ -275,11 +292,7 @@ describe('applyDelta — product summary', () => {
   });
 
   it('leaves the product untouched when the delta omits it', () => {
-    const before = applyDelta(
-      emptyUnderstanding(),
-      delta({ product: { name: 'Requirely' } }),
-      ctx(),
-    );
-    expect(applyDelta(before, delta({}), ctx()).product.name).toBe('Requirely');
+    const before = applyDelta(emptyUnderstanding(), delta({ product: { name: 'Requirely' } }));
+    expect(applyDelta(before, delta({})).product.name).toBe('Requirely');
   });
 });

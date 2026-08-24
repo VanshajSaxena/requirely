@@ -124,6 +124,28 @@ export type ProductSummary = z.infer<typeof ProductSummary>;
  * a bare `{}` and skip every inner field default. `.prefault()` feeds the value
  * through the schema, producing the fully-populated shape.
  */
+/**
+ * Monotonic per-collection counters, from which `applyDelta` mints ids.
+ *
+ * These collections have no table — they live inside one JSONB document — so
+ * their ids only need to be unique *within* that document. That is what lets
+ * them be short (`req-1`), which is what a model can reliably copy back into a
+ * delta. A 40-character UUID shared a 28-character prefix with its neighbours
+ * and made every reference a transcription task.
+ *
+ * A counter rather than `max + 1`: removal makes `max` non-monotonic, so
+ * reissuing `gap-3` would silently repoint a `Question` from an earlier turn
+ * that still stores `gapId: 'gap-3'`.
+ */
+export const NextIds = z.object({
+  requirement: z.number().int().positive().default(1),
+  constraint: z.number().int().positive().default(1),
+  assumption: z.number().int().positive().default(1),
+  contradiction: z.number().int().positive().default(1),
+  gap: z.number().int().positive().default(1),
+});
+export type NextIds = z.infer<typeof NextIds>;
+
 export const Understanding = z.object({
   product: ProductSummary.prefault({}),
   requirements: z.array(Requirement).default([]),
@@ -132,6 +154,7 @@ export const Understanding = z.object({
   contradictions: z.array(Contradiction).default([]),
   gaps: z.array(Gap).default([]),
   resolvedGaps: z.array(ResolvedGap).default([]),
+  nextIds: NextIds.prefault({}),
 });
 export type Understanding = z.infer<typeof Understanding>;
 

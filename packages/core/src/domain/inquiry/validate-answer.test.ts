@@ -6,16 +6,16 @@ import { validateAnswer } from './validate-answer.ts';
 
 const question = (overrides: Record<string, unknown> = {}) =>
   Question.parse({
-    id: 'qst_1',
-    sessionId: 'ses_1',
-    turnId: 'trn_1',
-    gapId: 'gap_1',
+    id: 'qst-1',
+    sessionId: 'ses-1',
+    turnId: 'trn-1',
+    gapId: 'gap-1',
     text: 'Who should be able to create an account?',
     mode: 'single',
     options: [
-      { id: 'opt_1', label: 'Anyone' },
-      { id: 'opt_2', label: 'Invited users only' },
-      { id: 'opt_3', label: 'Admin-created accounts' },
+      { id: 'opt-1', label: 'Anyone' },
+      { id: 'opt-2', label: 'Invited users only' },
+      { id: 'opt-3', label: 'Admin-created accounts' },
     ],
     askedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -23,8 +23,8 @@ const question = (overrides: Record<string, unknown> = {}) =>
 
 const answer = (overrides: Record<string, unknown> = {}) =>
   Answer.parse({
-    id: 'ans_1',
-    questionId: 'qst_1',
+    id: 'ans-1',
+    questionId: 'qst-1',
     answeredAt: '2026-01-01T00:01:00.000Z',
     ...overrides,
   });
@@ -46,7 +46,7 @@ describe('Question schema', () => {
   });
 
   it('rejects exactly one option, since that is a leading question rather than a choice', () => {
-    expect(() => question({ options: [{ id: 'opt_1', label: 'Only way' }] })).toThrow();
+    expect(() => question({ options: [{ id: 'opt-1', label: 'Only way' }] })).toThrow();
     expect(() => question({ options: [] })).not.toThrow();
   });
 });
@@ -54,7 +54,7 @@ describe('Question schema', () => {
 describe('validateAnswer', () => {
   it('accepts a single selection', () => {
     expect(() =>
-      validateAnswer(question(), answer({ selectedOptionIds: ['opt_2'] })),
+      validateAnswer(question(), answer({ selectedOptionIds: ['opt-2'] })),
     ).not.toThrow();
   });
 
@@ -68,20 +68,20 @@ describe('validateAnswer', () => {
     expect(() =>
       validateAnswer(
         question({ mode: 'multiple' }),
-        answer({ selectedOptionIds: ['opt_1', 'opt_3'] }),
+        answer({ selectedOptionIds: ['opt-1', 'opt-3'] }),
       ),
     ).not.toThrow();
   });
 
   it('rejects several selections on a single-choice question', () => {
     expect(
-      reasonOf(() => validateAnswer(question(), answer({ selectedOptionIds: ['opt_1', 'opt_2'] }))),
+      reasonOf(() => validateAnswer(question(), answer({ selectedOptionIds: ['opt-1', 'opt-2'] }))),
     ).toBe('too-many-selections');
   });
 
   it('rejects an option the question never offered', () => {
     expect(
-      reasonOf(() => validateAnswer(question(), answer({ selectedOptionIds: ['opt_9'] }))),
+      reasonOf(() => validateAnswer(question(), answer({ selectedOptionIds: ['opt-9'] }))),
     ).toBe('unknown-option');
   });
 
@@ -90,7 +90,7 @@ describe('validateAnswer', () => {
       reasonOf(() =>
         validateAnswer(
           question({ mode: 'multiple' }),
-          answer({ selectedOptionIds: ['opt_1', 'opt_1'] }),
+          answer({ selectedOptionIds: ['opt-1', 'opt-1'] }),
         ),
       ),
     ).toBe('duplicate-option');
@@ -103,14 +103,14 @@ describe('validateAnswer', () => {
   it('rejects an answer aimed at a different question', () => {
     expect(
       reasonOf(() =>
-        validateAnswer(question(), answer({ questionId: 'qst_2', selectedOptionIds: ['opt_1'] })),
+        validateAnswer(question(), answer({ questionId: 'qst-2', selectedOptionIds: ['opt-1'] })),
       ),
     ).toBe('question-mismatch');
   });
 
   it('reports the unknown option rather than the emptiness it also implies', () => {
     expect(
-      reasonOf(() => validateAnswer(question(), answer({ selectedOptionIds: ['opt_9'] }))),
+      reasonOf(() => validateAnswer(question(), answer({ selectedOptionIds: ['opt-9'] }))),
     ).toBe('unknown-option');
   });
 });

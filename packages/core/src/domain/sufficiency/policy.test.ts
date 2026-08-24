@@ -75,7 +75,7 @@ describe('decideSufficiency', () => {
 
   it('lets a single blocking gap veto otherwise perfect coverage', () => {
     const verdict = decideSufficiency(
-      assess(1, {}, ['gap_1']),
+      assess(1, {}, ['gap-1']),
       DEFAULT_SUFFICIENCY_POLICY,
       progress,
     );
