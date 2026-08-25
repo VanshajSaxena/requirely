@@ -81,12 +81,16 @@ export function fakeStructuredGenerator(script: FakeScript = {}): FakeStructured
       const scripted = queue.shift();
       const parsed = schema.safeParse(scripted);
       if (!parsed.success) {
+        // `retryable: true` is the contract `withValidationRetry` keys on. The
+        // fake reports schema disagreement exactly as a real provider does, so
+        // the retry decorator can be tested against it with no network.
         throw new CapabilityError(
           request.operation,
           'fake',
           `scripted response does not satisfy the schema: ${parsed.error.issues
             .map((issue) => `${issue.path.join('.') || '(root)'} ${issue.message}`)
             .join('; ')}`,
+          { retryable: true },
         );
       }
 
