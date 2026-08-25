@@ -14,6 +14,19 @@ The owner intends to hack this codebase directly, redirect its architecture, and
 
 Do this after completing a single unit of work in-line in the Chat.
 
+## Start here
+
+`docs/` carries the mental model that this file does not:
+
+- **[docs/PLAN.md](docs/PLAN.md)** — what the product is, the five invariants, where the
+  code lives, phase-by-phase status, and what to do next.
+- **[docs/DECISIONS.md](docs/DECISIONS.md)** — every architectural choice and the evidence
+  behind it, including two that were measured and reversed.
+- **[docs/WEAKNESSES.md](docs/WEAKNESSES.md)** — known gaps with the owner's verdict on
+  each. Do not silently re-decide these.
+
+Read `docs/PLAN.md`, then this file, then `packages/core/CLAUDE.md`.
+
 ## Repository shape
 
 A pnpm workspace. **`apps/` vs `packages/` is not frontend vs backend** — it is *has an
