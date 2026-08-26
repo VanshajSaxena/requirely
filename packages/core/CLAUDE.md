@@ -9,12 +9,48 @@ provider-agnostic constraint. This file covers only what is true inside this pac
 
 ## Status
 
-Phases 0–3a of `~/.claude/plans/polymorphic-gathering-crown.md` are done: tooling,
-boundary gates, the domain model, the engine loop, and Postgres storage with atomic
-turns. **No provider package is installed** — that is deliberate, and it is the
-evidence the ports hold. Real AI adapters, PDF/audio ingestion, projections, and the
-CLI do not exist yet. Add commands below as they land; never document a command that
-doesn't exist.
+Phases 0–5 are done: tooling, boundary gates, the domain model, the engine loop,
+Postgres storage with atomic turns, real AI adapters (Anthropic + OpenAI, with
+retry and cassettes), and ingestion (text, PDF, DOCX, audio).
+
+**Still missing: projections (Phase 6) and the CLI (Phase 7).** Nothing has yet
+run against a live model — Phase 4's providers are wired and unit-tested but no
+real call has been made.
+
+See `docs/PLAN.md` for the full picture, `docs/DECISIONS.md` for why the
+architecture is shaped this way, and `docs/WEAKNESSES.md` for what is known-wrong.
+Add commands below as they land; never document a command that doesn't exist.
+
+## Ingestion orientation
+
+`ingestion/service.ts` is the **only** place a `Source` comes into existence. It
+owns the `SourceRepository`, which is what lets it assign the session-scoped
+ordinal (`src-1`, `src-2`) — previously the caller's job, and nothing computed it.
+
+Every modality leaves the same shape behind: a `Source` whose `normalizedText` is
+all the engine ever reads. Nothing downstream learns a PDF or an audio file was
+involved. That is "modality is a mechanism, not an identity" made concrete.
+
+- **Documents extract *before* persisting.** A corrupt PDF leaves no row.
+- **Audio persists `pending` *first*, then transcribes, then updates.** The
+  in-flight state is real and observable, so moving transcription to a job queue
+  later changes the runner, not the model.
+- **A failed transcription deletes its pending row.** A `pending` row is an
+  in-flight marker, not a failure record — so a failure still leaves no durable
+  trace. This is the only legitimate caller of `SourceRepository.remove`.
+- **Ordinals may be reused after a failed ingest**, and that is safe: a `pending`
+  source has no text, so `isAnalyzable()` is false, so it can never be cited in
+  `provenance` and never reaches a turn. `loadSources` in `engine/loop.ts`
+  enforces the premise by skipping non-analyzable sources.
+- **Empty extraction is rejected**, not stored. A scanned PDF is images; storing
+  it would spend a turn discovering there is nothing to read.
+- **Media type comes from the file extension**, overridable. Sniffing magic bytes
+  is more robust, but a `.pdf` that is secretly a ZIP is a user error worth
+  surfacing rather than silently correcting.
+
+Whisper does not diarize, so `TranscriptSegment.speakerLabel` is always null
+today. The field exists so Deepgram drops in later without re-transcribing
+anything already ingested.
 
 ## Storage orientation
 

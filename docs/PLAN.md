@@ -100,10 +100,26 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 | 3 Postgres storage, atomic turns | done |
 | 3a `text` → `timestamptz(3)` | done (correction) |
 | 3b Model-copyable identifiers | done (correction) |
-| **4 Real AI adapters** | **code done; one real run per provider still pending** |
-| 5 Ingestion (PDF, DOCX, code, audio) | not started |
-| 6 Projections (SRS, req doc, agent prompt) | not started |
+| 4 Real AI adapters | code done; **one real run per provider still pending** |
+| 5 Ingestion (text, PDF, DOCX, audio) | done — **code ingestion deliberately deferred** |
+| **6 Projections (SRS, req doc, agent prompt)** | **next** |
 | 7 CLI | not started |
+
+### What Phase 5 added
+
+- `ingestion/service.ts` — the only place a `Source` is created. Owns the
+  `SourceRepository`, so it assigns the session-scoped ordinal itself; that
+  closes a gap open since Phase 3b.
+- `adapters/extraction/{pdf,docx,composite}.ts` — `unpdf` and `mammoth` behind
+  the `DocumentExtractor` port, routed by `supports()`.
+- `adapters/transcription/{openai,fake}.ts` — `transcribe()` from `ai@7`.
+- `SourceRepository.remove` — one legitimate caller: cleaning up a `pending` row
+  whose transcription failed.
+- `loadSources` in `engine/loop.ts` now **skips non-analyzable sources**, so a
+  `pending` or `failed` source can never reach a model.
+
+**Code ingestion is deferred** by owner decision. The `code` `SourceKind` stays
+in the enum; nothing produces it.
 
 ### What Phase 4 added
 

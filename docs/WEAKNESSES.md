@@ -41,9 +41,8 @@ building, usage mapping and error translation are covered separately by
 together without a live call. HTTP-level recording would close this; it is more
 machinery than it is currently worth.
 
-**`ingestText` requires an `ordinal` from the caller and nothing computes it yet.**
-Sources are append-only so `count + 1` is monotonic, and a concurrent-ingest race
-lands on the composite primary key. No production caller exists yet.
+**~~`ingestText` requires an `ordinal` from the caller~~ — closed in Phase 5.**
+`ingestion/service.ts` owns the `SourceRepository` and assigns ordinals itself.
 
 **The id change is unmeasured against a real model.** Every known risk factor is
 reduced — 40 characters to ~5, no shared prefixes, a small candidate set — but the
@@ -62,6 +61,28 @@ whether it produces *good* requirements. That needs real models plus cassettes.
 **No eval harness.** `Turn` records the `SufficiencyVerdict` and `usage`, which is
 exactly the data a scored eval suite would need — but nothing scores it, so "did
 my prompt change help?" is currently unanswerable.
+
+**A crash mid-transcription leaves a stuck `pending` row.** The failure path
+deletes it, but a process that dies between `add` and the `catch` cannot. Nothing
+reaps orphans. Harmless today — `loadSources` skips non-analyzable sources, so a
+stuck row is invisible to the engine — but it needs a sweep once transcription
+moves to a job queue.
+
+**Large audio is not chunked.** Above the provider's file-size limit,
+transcription fails with the vendor's message. Chunking a meeting recording and
+stitching the transcript is real work and nothing needs it yet; truncating
+silently would be worse than failing.
+
+**Code ingestion does not exist.** Deferred by owner decision; the `code`
+`SourceKind` stays in the enum with nothing producing it. When it arrives the
+open question is scope — a repository's full text is precisely the unbounded
+growth weakness #3 warns about, so it needs an explicit byte budget enforced at
+the ingestion boundary, where it can be explained.
+
+**Media type comes from the file extension.** A `.pdf` that is really a ZIP
+reaches `unpdf` and fails there rather than being caught up front. Deliberate: a
+wrong extension is a user error worth surfacing. Magic-byte sniffing is the
+upgrade if it becomes a nuisance.
 
 **No auth, no multi-tenancy.** Session rows carry no `ownerId`. Additive later.
 
@@ -87,6 +108,10 @@ thing that gets rediscovered painfully.
   `.partial()` does not strip defaults. Both are silent data bugs.
 - **`Set.add()` returns the Set, not a boolean.** `!seen.add(id)` is always false;
   a duplicate check written that way never fires.
+- **`unpdf` rejects a Node `Buffer`** — *"Please provide binary data as
+  `Uint8Array`, rather than `Buffer`"* — even though `Buffer` extends
+  `Uint8Array` and satisfies the port's type. Any caller using `fs.readFile`
+  hits it. `pdf.ts` normalizes with a zero-copy view.
 - **AI SDK v7 provider-level usage is nested** (`inputTokens: { total, noCache,
   … }`) while the flattened `LanguageModelUsage` on the result is not. A mock
   returning the flat shape yields zeros.
