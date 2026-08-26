@@ -3,7 +3,7 @@
   "extends": "//",
   "overrides": [
     {
-      "includes": ["src/**", "!src/adapters/ai/**"],
+      "includes": ["src/**", "!src/adapters/ai/**", "!src/adapters/transcription/**"],
       "linter": {
         "rules": {
           "style": {
@@ -11,7 +11,7 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "ai": "The AI SDK may only be imported under src/adapters/ai/. Depend on a domain port instead."
+                  "ai": "The AI SDK may only be imported under src/adapters/ai/ or src/adapters/transcription/. Depend on a domain port instead."
                 },
                 "patterns": [
                   {
@@ -33,7 +33,7 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "ai": "The AI SDK may only be imported under src/adapters/ai/. Depend on a domain port instead."
+                  "ai": "The AI SDK may only be imported under src/adapters/ai/ or src/adapters/transcription/. Depend on a domain port instead."
                 },
                 "patterns": [
                   {
@@ -55,7 +55,7 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "ai": "The AI SDK may only be imported under src/adapters/ai/. Depend on a domain port instead."
+                  "ai": "The AI SDK may only be imported under src/adapters/ai/ or src/adapters/transcription/. Depend on a domain port instead."
                 },
                 "patterns": [
                   {

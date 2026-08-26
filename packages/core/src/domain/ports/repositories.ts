@@ -40,6 +40,21 @@ export interface SourceRepository {
   save(source: Source): Promise<void>;
   findById(sessionId: SessionId, id: SourceId): Promise<Source | null>;
   listBySession(sessionId: SessionId): Promise<readonly Source[]>;
+  /**
+   * Deletes a source. The **only** legitimate caller is ingestion cleaning up a
+   * `pending` row whose transcription failed, so that a failure leaves no
+   * durable trace.
+   *
+   * This weakens "sources are append-only", which ordinal assignment relies on:
+   * after a deletion, `listBySession().length + 1` reissues the same ordinal.
+   * That reuse is safe for exactly one reason — a `pending` source has no text,
+   * so `isAnalyzable()` is false, so it can never be cited in `provenance` and
+   * never reaches a turn. Nothing can be holding the id being reused.
+   *
+   * `engine/loop.ts` enforces the premise by skipping non-analyzable sources, so
+   * this is a checked property rather than a comment asking to be believed.
+   */
+  remove(sessionId: SessionId, id: SourceId): Promise<void>;
 }
 
 /** Read-only. Revisions are append-only and appended only by a committed turn. */

@@ -7,7 +7,10 @@
 #   1. domain/ may not import from any outer layer.
 #   2. domain/ may not import third-party packages other than zod (tests may use vitest).
 #   3. engine/ may not import adapters or app.
-#   4. `ai` and `@ai-sdk/*` may only be imported under adapters/ai/.
+#   4. `ai` and `@ai-sdk/*` may only be imported under an AI-vendor adapter
+#      directory: adapters/ai/ (StructuredGenerator) or adapters/transcription/
+#      (Transcriber). An explicit list, so adding a third is a reviewable diff
+#      rather than a rule quietly widened until it stopped complaining.
 #   5. Time, identity and randomness enter only via the Clock and IdGenerator ports.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -78,10 +81,10 @@ for dir in src/domain src/engine src/ingestion src/projection src/app src/config
   ai_leaks+="$(find_imports "$dir" '(ai|@ai-sdk/.*)')"$'\n'
 done
 for dir in src/adapters/*/; do
-  case "$dir" in src/adapters/ai/) continue ;; esac
+  case "$dir" in src/adapters/ai/ | src/adapters/transcription/) continue ;; esac
   ai_leaks+="$(find_imports "$dir" '(ai|@ai-sdk/.*)')"$'\n'
 done
-report "\`ai\`/\`@ai-sdk/*\` may only be imported under src/adapters/ai/" \
+report "\`ai\`/\`@ai-sdk/*\` may only be imported under an AI-vendor adapter directory" \
   "$(printf '%s' "$ai_leaks" | grep -vE '^[[:space:]]*$' || true)"
 
 # Rule 5: determinism. Without it, replayable snapshot tests of the loop decay

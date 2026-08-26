@@ -101,6 +101,11 @@ export function inMemoryStores(): MemoryStores {
       const found = db.sources.get(sourceKey(sessionId, id));
       return found ? clone(found) : null;
     },
+    async remove(sessionId: SessionId, id: SourceId) {
+      // Idempotent: removing something already gone is not an error, which
+      // matters because the only caller is failure cleanup.
+      db.sources.delete(sourceKey(sessionId, id));
+    },
     async listBySession(sessionId: SessionId) {
       return [...db.sources.values()].filter((s) => s.sessionId === sessionId).map(clone);
     },

@@ -247,6 +247,19 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         ).toEqual([]);
       });
 
+      it('removes a source, and removing a missing one is not an error', async () => {
+        // The only caller is ingestion cleaning up a `pending` row whose
+        // transcription failed, so idempotence matters: cleanup must not itself
+        // throw and mask the real failure.
+        await stores.sources.add(fixtures.source());
+        await stores.sources.remove(fixtures.session().id, sourceId('src-1'));
+
+        expect(await stores.sources.findById(fixtures.session().id, sourceId('src-1'))).toBeNull();
+        await expect(
+          stores.sources.remove(fixtures.session().id, sourceId('src-1')),
+        ).resolves.toBeUndefined();
+      });
+
       it('lists only the sources of the requested session', async () => {
         await stores.sessions.create(fixtures.session({ id: 'ses-2' }));
         await stores.sources.add(fixtures.source({ id: 'src-1' }));

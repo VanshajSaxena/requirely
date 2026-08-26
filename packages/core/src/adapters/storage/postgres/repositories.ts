@@ -186,6 +186,12 @@ export function postgresSourceRepository(db: Database): SourceRepository {
       return row ? toSource(row) : null;
     },
 
+    async remove(sessionId: SessionId, id: SourceId) {
+      // Idempotent: a DELETE matching nothing is a no-op, which matches the
+      // in-memory adapter and matters because the only caller is failure cleanup.
+      await db.delete(sources).where(and(eq(sources.sessionId, sessionId), eq(sources.id, id)));
+    },
+
     async listBySession(sessionId: SessionId) {
       const rows = await db
         .select()

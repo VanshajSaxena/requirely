@@ -10,6 +10,7 @@ import {
   type GapId,
   type IdGenerator,
   type InquiryRepository,
+  isAnalyzable,
   materializeQuestions,
   type Question,
   type QuestionDraft,
@@ -133,6 +134,19 @@ async function resolveAnswers(
   return paired;
 }
 
+/**
+ * Loads the turn's input sources, **skipping any that are not analyzable**.
+ *
+ * A source can exist without text: audio is persisted as `pending` while
+ * transcription runs, and a failed extraction can leave a `failed` row. Sending
+ * either to a model spends a turn on an empty document.
+ *
+ * This also makes an argument elsewhere checkable rather than merely true.
+ * `SourceRepository.remove` lets ingestion delete a failed `pending` row, after
+ * which the next source reuses its ordinal. That reuse is safe *because* a
+ * pending source can never have been cited — and this line is what guarantees it
+ * never reached a model to be cited from.
+ */
 async function loadSources(
   repository: SourceRepository,
   sessionId: SessionId,
@@ -141,7 +155,7 @@ async function loadSources(
   const loaded: Source[] = [];
   for (const id of ids) {
     const source = await repository.findById(sessionId, id);
-    if (source !== null) loaded.push(source);
+    if (source !== null && isAnalyzable(source)) loaded.push(source);
   }
   return loaded;
 }
