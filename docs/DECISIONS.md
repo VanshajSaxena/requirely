@@ -173,6 +173,40 @@ numbering scheme of its own. This change *removed* future work.
 
 ---
 
+## Projections
+
+**Pure functions over a stored revision.** No model call. The `Understanding`
+already holds every requirement, constraint, assumption, gap and citation, so
+rendering is formatting. Free, instant, unit-testable, and unable to invent a
+requirement that was never captured. If a projection ever *needs* to generate
+prose, that means the Understanding was thin and the fix belongs upstream in the
+engine.
+
+**`sources` is passed in, not fetched.** Source labels live in the repository,
+not in the `Understanding`. A projection that fetched them would be the first
+thing in this layer able to fail, and impossible to snapshot-test.
+
+**Citations name a source; they never quote it.** `Provenance.quote` is
+unverified (WEAKNESSES.md #1), and a specification is where a fabricated
+quotation would look most authoritative. `[src-1]` keeps traceability without
+printing text nothing has confirmed. Quotes switch on in `citations.ts` alone
+once verification exists.
+
+**Standard SRS headings, empty sections omitted.** `section()` drops an empty
+body and `group()` drops a parent whose children are all empty, so "omit what we
+have no data for" is a property of the renderer rather than a conditional
+repeated at twenty call sites.
+
+**Honesty is unconditional.** Gaps and unresolved contradictions render whenever
+they exist — not only when the session ran out of questions. `sufficient` means
+every *required* dimension cleared the bar; other gaps can still be open, and
+hiding them would make the most confident-looking document the least honest one.
+
+**The agent prompt is a different genre, not a reskin.** It drops citations an
+agent cannot follow, states assumptions as decisions it is *inheriting*, and
+renders open gaps as an instruction to stop and ask. Handing a coding agent an
+under-specified brief is the exact failure this product exists to prevent.
+
 ## Patterns worth reusing
 
 - **Pass the mutator in, don't return the mutation.** `runTurn` hands `merge` to

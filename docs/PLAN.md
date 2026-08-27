@@ -62,7 +62,8 @@ requirely/
 | --- | --- | --- |
 | `domain/` | **only `zod`** | Entities, Zod schemas, all ports, three pure functions |
 | `engine/` | domain only | `runTurn`, context assembly, prompts, strategies |
-| `ingestion/` | domain | modality → normalized text (text only so far) |
+| `ingestion/` | domain | modality → normalized text; the only place a `Source` is created |
+| `projection/` | domain only | SRS / requirements doc / agent prompt — pure, no model call |
 | `adapters/` | domain | ai (fake, anthropic, openai, retry, recording), storage (memory, postgres), system (clock, ids) |
 | `config/` | — | Zod-validated env |
 | `observability/` | — | minimal `Logger` |
@@ -88,8 +89,8 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 
 ## 3. Status
 
-**Done:** phases 0, 1, 2, 3, 3a, 3b, and Phase 4's code.
-**143 tests, 15 files.** `pnpm verify` covers typecheck (3 packages) + lint +
+**Done:** phases 0–6. Only the CLI remains.
+**184 tests, 18 files.** `pnpm verify` covers typecheck (3 packages) + lint +
 2 boundary scripts + node-runnable + tests.
 
 | Phase | State |
@@ -102,8 +103,8 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 | 3b Model-copyable identifiers | done (correction) |
 | 4 Real AI adapters | code done; **one real run per provider still pending** |
 | 5 Ingestion (text, PDF, DOCX, audio) | done — **code ingestion deliberately deferred** |
-| **6 Projections (SRS, req doc, agent prompt)** | **next** |
-| 7 CLI | not started |
+| 6 Projections (SRS, req doc, agent prompt) | done |
+| **7 CLI** | **next — the last phase** |
 
 ### What Phase 5 added
 
@@ -120,6 +121,18 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 
 **Code ingestion is deferred** by owner decision. The `code` `SourceKind` stays
 in the enum; nothing produces it.
+
+### What Phase 6 added
+
+- `projection/` — `project(target, { session, revision, sources })`, three
+  renderers over one shared section library. **Pure functions**: no model call,
+  no I/O, no tokens. Invariant #1 made executable.
+- `finalizeSession` in `domain/session/` — the explicit act of finishing, kept
+  separate because projections mutate nothing.
+- Honesty is uniform: open gaps and unresolved contradictions render whenever
+  they exist, not only when the budget ran out.
+- The agent prompt renders open gaps as **"STOP — do not guess, ask"**, which is
+  the product's own thesis applied to its own output.
 
 ### What Phase 4 added
 
@@ -144,9 +157,9 @@ in the enum; nothing produces it.
   attempt, and a turn whose `usage` array holds more entries than it made
   operations is visibly a turn that retried.
 
-Then phases 5 → 6 → 7 in order. The long-term goal is a working CLI; that is a
-reason to keep the architecture solid and moving, **not** a reason to collapse
-phases into a vertical slice.
+Then **Phase 7, the CLI** — the last phase. It stays small and interactive: a
+playground for exercising the engine, not a surface to invest in. It will force
+the `./server` export question below.
 
 ---
 
