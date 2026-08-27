@@ -97,6 +97,31 @@ export function createSession(
   });
 }
 
+/**
+ * Marks a session finished and records what was generated from it.
+ *
+ * A separate, explicit act — projections are pure and mutate nothing, so
+ * rendering a document does not by itself finish a session. `assertTransition`
+ * keeps `finalized` reachable only from `sufficient` or `exhausted`, which is
+ * the one rule that state machine exists to enforce: **you cannot finalize what
+ * you have not assessed.** Both of those states carry a recorded verdict; a
+ * document generated without one would be exactly the confident output hiding
+ * its holes that this design exists to prevent.
+ */
+export function finalizeSession(
+  session: Session,
+  target: OutputTarget,
+  ctx: { readonly clock: Clock },
+): Session {
+  assertTransition(session.status, 'finalized');
+  return Session.parse({
+    ...session,
+    status: 'finalized',
+    outputTarget: target,
+    updatedAt: ctx.clock.now(),
+  });
+}
+
 export function canTransition(from: SessionStatus, to: SessionStatus): boolean {
   return LEGAL_TRANSITIONS[from].includes(to);
 }
