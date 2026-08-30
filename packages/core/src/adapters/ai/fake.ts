@@ -35,6 +35,8 @@ export interface RecordedCall {
   readonly instructions: string;
   readonly input: string;
   readonly effort: Effort | undefined;
+  /** Recorded so a test can assert no call goes out without a spend ceiling. */
+  readonly maxOutputTokens: number | undefined;
 }
 
 export interface FakeStructuredGenerator extends StructuredGenerator {
@@ -67,6 +69,7 @@ export function fakeStructuredGenerator(script: FakeScript = {}): FakeStructured
         instructions: request.instructions,
         input: request.input,
         effort: request.effort,
+        maxOutputTokens: request.maxOutputTokens,
       });
 
       const queue = queues.get(request.operation);
@@ -84,13 +87,27 @@ export function fakeStructuredGenerator(script: FakeScript = {}): FakeStructured
         // `retryable: true` is the contract `withValidationRetry` keys on. The
         // fake reports schema disagreement exactly as a real provider does, so
         // the retry decorator can be tested against it with no network.
+        //
+        // It reports the failed attempt's `usage` for the same reason: a real
+        // provider bills for output that fails validation, and a fake that
+        // returned it for free would let a cost-accounting bug pass every test.
         throw new CapabilityError(
           request.operation,
           'fake',
           `scripted response does not satisfy the schema: ${parsed.error.issues
             .map((issue) => `${issue.path.join('.') || '(root)'} ${issue.message}`)
             .join('; ')}`,
-          { retryable: true },
+          {
+            retryable: true,
+            usage: Usage.parse({
+              operation: request.operation,
+              provider: 'fake',
+              model: 'fake-1',
+              inputTokens: estimateTokens(request.instructions) + estimateTokens(request.input),
+              outputTokens: estimateTokens(JSON.stringify(scripted)),
+              costMinorUnits: 0,
+            }),
+          },
         );
       }
 

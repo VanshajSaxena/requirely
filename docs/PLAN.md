@@ -154,8 +154,8 @@ in the enum; nothing produces it.
 - what a turn actually costs,
 - whether the `effort` mapping behaves sensibly,
 - **how often output fails schema validation** — the retry decorator logs every
-  attempt, and a turn whose `usage` array holds more entries than it made
-  operations is visibly a turn that retried.
+  attempt, and folds each wasted attempt's tokens into the usage it returns, so a
+  retried turn reports what it really cost.
 
 Then **Phase 7, the CLI** — the last phase. It stays small and interactive: a
 playground for exercising the engine, not a surface to invest in. It will force

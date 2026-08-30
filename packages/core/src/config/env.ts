@@ -10,7 +10,7 @@ import { z } from 'zod';
  */
 
 const ReasoningProvider = z.enum(['anthropic', 'openai', 'fake']);
-const TranscriptionProvider = z.enum(['openai', 'fake']);
+const TranscriptionProvider = z.enum(['openai', 'fake', 'none']);
 const TurnStrategy = z.enum(['separate', 'merged']);
 
 export type ReasoningProvider = z.infer<typeof ReasoningProvider>;
@@ -29,6 +29,21 @@ const EnvSchema = z.object({
   REQUIRELY_REASONING_PROVIDER: ReasoningProvider.default('anthropic'),
   REQUIRELY_REASONING_MODEL: z.string().min(1).default('claude-opus-5'),
 
+  /**
+   * `none` means **audio ingestion is unavailable** — no transcriber is built,
+   * and `ingestAudio` fails with an `IngestionError` naming the reason.
+   *
+   * It exists because the check below is eager, which is right in principle and
+   * was conflating two different things: a *configured* provider and a provider
+   * that will actually be used. With `openai` as the only real option, a
+   * text-only session run with an Anthropic key alone died at startup demanding
+   * `OPENAI_API_KEY` for a capability it was never going to touch.
+   *
+   * Not `fake`, which would also have "worked": a fake transcriber silently
+   * returns scripted text, so the failure moves from startup into the
+   * Understanding, where it looks like something a user said. Refusing to
+   * transcribe beats inventing a transcript.
+   */
   REQUIRELY_TRANSCRIPTION_PROVIDER: TranscriptionProvider.default('openai'),
   REQUIRELY_TRANSCRIPTION_MODEL: z.string().min(1).default('whisper-1'),
 
@@ -82,6 +97,9 @@ const CREDENTIAL_FOR = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
   fake: null,
+  // Needs no credential because it makes no calls — see the note on
+  // REQUIRELY_TRANSCRIPTION_PROVIDER above.
+  none: null,
 } as const satisfies Record<string, string | null>;
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {

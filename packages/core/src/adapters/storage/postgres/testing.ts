@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
+import { MIGRATIONS_FOLDER } from './migrations.ts';
 import type { Database } from './repositories.ts';
 import { schema } from './schema.ts';
 
@@ -31,7 +32,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   // The same committed SQL production runs. Applying it here is what makes
   // schema.ts and the migrations provably agree — a drift between them fails
   // every query in the contract suite rather than surfacing in production.
-  await migrate(db, { migrationsFolder: './drizzle' });
+  await migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 
   return {
     db,

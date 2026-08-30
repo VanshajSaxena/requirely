@@ -16,6 +16,29 @@ import { withValidationRetry } from './retry.ts';
 const Shape = z.object({ value: z.string().min(1) });
 const request = { operation: OPERATION.assess, instructions: 'be useful', input: 'hello' };
 
+describe('the cost of a retry', () => {
+  it('reports the wasted attempt as well as the successful one', async () => {
+    // Before this, a recovered call reported only its final attempt: the failed
+    // one threw, and its usage died with the exception. Every retried turn
+    // therefore under-reported what it actually cost — invisible, because the
+    // number it printed was plausible.
+    const generator = withValidationRetry(
+      fakeStructuredGenerator({ assess: [{ wrong: 'shape' }, { value: 'ok' }] }),
+    );
+
+    const recovered = await generator.generate(Shape, request);
+    const direct = await withValidationRetry(
+      fakeStructuredGenerator({ assess: [{ value: 'ok' }] }),
+    ).generate(Shape, request);
+
+    expect(recovered.value).toEqual({ value: 'ok' });
+    // Strictly more than the same call made without a retry — the difference is
+    // exactly the attempt that was thrown away.
+    expect(recovered.usage.outputTokens).toBeGreaterThan(direct.usage.outputTokens);
+    expect(recovered.usage.inputTokens).toBeGreaterThan(direct.usage.inputTokens);
+  });
+});
+
 describe('withValidationRetry', () => {
   it('recovers when a later attempt satisfies the schema', async () => {
     // `{ value: '' }` fails `min(1)`; the fake reports it as retryable exactly

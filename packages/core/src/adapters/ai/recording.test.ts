@@ -7,6 +7,7 @@ import { CapabilityError, OPERATION } from '../../domain/index.ts';
 import { fakeStructuredGenerator } from './fake.ts';
 import { recordingStructuredGenerator } from './recording.ts';
 
+const MODEL = 'test-model-1';
 const Shape = z.object({ value: z.string().min(1) });
 const request = (input = 'hello') => ({
   operation: OPERATION.assess,
@@ -29,7 +30,7 @@ describe('recordingStructuredGenerator', () => {
   it('calls through on a miss and replays without calling again', async () => {
     const cassetteDir = await scratch();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'from the model' }] });
-    const generator = recordingStructuredGenerator(fake, { cassetteDir });
+    const generator = recordingStructuredGenerator(fake, { cassetteDir, model: MODEL });
 
     const recorded = await generator.generate(Shape, request());
     const replayed = await generator.generate(Shape, request());
@@ -39,10 +40,34 @@ describe('recordingStructuredGenerator', () => {
     expect(fake.calls).toHaveLength(1);
   });
 
+  it('does not replay one model\u2019s output for another', async () => {
+    // The failure this pins is silent, which is why it is pinned. The key is a
+    // hash of the request, and the model lives on the generator rather than in
+    // the request \u2014 so before the model joined the key, recording a session on
+    // a cheap model and re-running it on an expensive one replayed the cheap
+    // model\u2019s answers, reported the cheap model in `usage`, and looked green.
+    const cassetteDir = await scratch();
+    const cheap = fakeStructuredGenerator({ assess: [{ value: 'from the cheap model' }] });
+    const better = fakeStructuredGenerator({ assess: [{ value: 'from the better model' }] });
+
+    await recordingStructuredGenerator(cheap, { cassetteDir, model: 'cheap-1' }).generate(
+      Shape,
+      request(),
+    );
+    const second = await recordingStructuredGenerator(better, {
+      cassetteDir,
+      model: 'better-1',
+    }).generate(Shape, request());
+
+    expect(second.value).toEqual({ value: 'from the better model' });
+    // It actually called through rather than hitting the other model's cassette.
+    expect(better.calls).toHaveLength(1);
+  });
+
   it('preserves usage through a replay, so cost data survives', async () => {
     const cassetteDir = await scratch();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'x' }] });
-    const generator = recordingStructuredGenerator(fake, { cassetteDir });
+    const generator = recordingStructuredGenerator(fake, { cassetteDir, model: MODEL });
 
     const recorded = await generator.generate(Shape, request());
     const replayed = await generator.generate(Shape, request());
@@ -56,7 +81,7 @@ describe('recordingStructuredGenerator', () => {
     // a prompt that no longer exists, passing while testing nothing real.
     const cassetteDir = await scratch();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'a' }, { value: 'b' }] });
-    const generator = recordingStructuredGenerator(fake, { cassetteDir });
+    const generator = recordingStructuredGenerator(fake, { cassetteDir, model: MODEL });
 
     await generator.generate(Shape, request('first'));
     await generator.generate(Shape, request('second'));
@@ -67,7 +92,11 @@ describe('recordingStructuredGenerator', () => {
   it('fails loudly in replay mode rather than making a billable call', async () => {
     const cassetteDir = await scratch();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'x' }] });
-    const generator = recordingStructuredGenerator(fake, { cassetteDir, mode: 'replay' });
+    const generator = recordingStructuredGenerator(fake, {
+      cassetteDir,
+      model: MODEL,
+      mode: 'replay',
+    });
 
     await expect(generator.generate(Shape, request())).rejects.toThrow(CapabilityError);
     expect(fake.calls).toHaveLength(0);
@@ -76,13 +105,16 @@ describe('recordingStructuredGenerator', () => {
   it('re-validates a replayed cassette against the current schema', async () => {
     const cassetteDir = await scratch();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'x' }] });
-    await recordingStructuredGenerator(fake, { cassetteDir }).generate(Shape, request());
+    await recordingStructuredGenerator(fake, { cassetteDir, model: MODEL }).generate(
+      Shape,
+      request(),
+    );
 
     // A schema that has since gained a field. The stale cassette must fail here
     // rather than flow through as though it were current.
     const Tightened = Shape.extend({ addedLater: z.string() });
     await expect(
-      recordingStructuredGenerator(fake, { cassetteDir, mode: 'replay' }).generate(
+      recordingStructuredGenerator(fake, { cassetteDir, model: MODEL, mode: 'replay' }).generate(
         Tightened,
         request(),
       ),
@@ -92,7 +124,10 @@ describe('recordingStructuredGenerator', () => {
   it('writes a human-readable cassette, since these are reviewed in diffs', async () => {
     const cassetteDir = await scratch();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'x' }] });
-    await recordingStructuredGenerator(fake, { cassetteDir }).generate(Shape, request());
+    await recordingStructuredGenerator(fake, { cassetteDir, model: MODEL }).generate(
+      Shape,
+      request(),
+    );
 
     const files = await import('node:fs/promises').then((fs) => fs.readdir(cassetteDir));
     expect(files[0]).toMatch(/^assess-[0-9a-f]{16}\.json$/);

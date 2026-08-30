@@ -90,6 +90,26 @@ async function seedSession(
   return { session, sourceId: source.id };
 }
 
+describe('every model call carries a spend ceiling', () => {
+  it('sends maxOutputTokens on every operation, so a turn has a knowable worst case', async () => {
+    // Not a tuning assertion — a cost one. With `maxOutputTokens` unset the SDK
+    // falls back to the model's own maximum *and* derives the extended-thinking
+    // budget from it, so an uncapped turn on claude-opus-5 was bounded only by
+    // ~$4.80. Discovered from a live request that failed on auth and so cost
+    // nothing; pinned here so it cannot come back silently.
+    const h = harness();
+    const { session, sourceId } = await seedSession(h);
+    await runAndCommit(session, { trigger: 'initial', sourceIds: [sourceId] }, h.deps);
+
+    expect(h.generator.calls.length).toBeGreaterThan(0);
+    for (const call of h.generator.calls) {
+      expect(call.maxOutputTokens, `${call.operation} went out uncapped`).toBeGreaterThan(0);
+      // A ceiling above any real model's output limit would be a cap in name only.
+      expect(call.maxOutputTokens ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(32_000);
+    }
+  });
+});
+
 describe('runTurn — the gathering loop', () => {
   it('turn 1 builds an understanding, finds gaps, and asks about them', async () => {
     const h = harness();

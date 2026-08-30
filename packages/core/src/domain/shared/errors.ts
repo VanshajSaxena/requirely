@@ -1,3 +1,5 @@
+import type { Usage } from './usage.ts';
+
 /**
  * Domain errors.
  *
@@ -78,12 +80,21 @@ export class CapabilityError extends DomainError {
   readonly capability: string;
   readonly provider: string;
   readonly retryable: boolean;
+  /**
+   * What the failed attempt already cost, when the provider reported it.
+   *
+   * A failed call is billed like any other, so dropping this makes a retried
+   * turn under-report its spend — and `retryable: true` exists precisely so the
+   * caller tries again. Carrying it lets `withValidationRetry` fold the wasted
+   * attempts into the usage it returns.
+   */
+  readonly usage: Usage | null;
 
   constructor(
     capability: string,
     provider: string,
     message: string,
-    options?: { retryable?: boolean; cause?: unknown },
+    options?: { retryable?: boolean; cause?: unknown; usage?: Usage },
   ) {
     super('CAPABILITY_FAILED', `${capability} via "${provider}" failed: ${message}`, {
       cause: options?.cause,
@@ -91,5 +102,6 @@ export class CapabilityError extends DomainError {
     this.capability = capability;
     this.provider = provider;
     this.retryable = options?.retryable ?? false;
+    this.usage = options?.usage ?? null;
   }
 }

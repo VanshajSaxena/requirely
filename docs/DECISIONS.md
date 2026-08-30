@@ -36,10 +36,12 @@ neither reaching the engine — which is what a real port looks like.
 
 **Every port returns `Usage`, tagged with `operation`.** Capturing cost at the
 capability boundary rather than at call sites is what makes "assess was 40% of
-this session's spend" answerable without touching engine code. It later paid out
-a second time: because each retry attempt is its own call, a turn whose `usage`
-array holds more entries than it made operations is visibly a turn that retried —
-retry observability with no new field.
+this session's spend" answerable without touching engine code. A corollary claimed here for two phases —
+that a retried turn was visible from its `usage` array holding extra entries —
+was **false**, and Phase 7 removed it: a failed attempt throws, so its usage died
+with the exception and every retried turn under-reported its own cost. The port
+was right; the free-observability bonus was imagined. `CapabilityError` now
+carries the failed attempt's usage and `withValidationRetry` folds it in.
 
 ---
 

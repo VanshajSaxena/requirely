@@ -1,0 +1,63 @@
+{
+  "operation": "assess",
+  "model": "claude-haiku-4-5",
+  "recordedAt": "2026-08-28T17:13:19.244Z",
+  "preview": {
+    "instructions": "You judge how completely a product is understood — you do NOT decide whether it\nis complete enough. That decision is made elsewhere from your scores.\n\nScore each dimension from 0 to 1:\n- purpose: what this is and why it exists\n- users: who it serves and what they need\n- core-behaviour: what the system actually does\n- data: what it stores and what shape that takes\n- constraints: technical, business, regulatory, operational limits\n- edge-cases: failure modes and boundaries\n- acceptance: how anyone…",
+    "input": "# Understanding to assess\n## Product\none-liner: A tool that extracts what you know about a product and identifies what is missing\npurpose: To help users consolidate their understanding of a product and surface gaps in their thinking\nusers: Product managers, Teams exploring new ideas\n\n## Assumptions\n- [asm-1] The tool will identify gaps by comparing user-provided knowledge against a canonical checklist of product planning topics\n- [asm-2] Business goals and success metrics are the primary dimensi…"
+  },
+  "value": {
+    "coverage": [
+      {
+        "dimension": "purpose",
+        "score": 0.75,
+        "rationale": "One-liner and stated purpose explicitly define the tool's function and intent, but specific criteria for identifying 'missing' knowledge against the checklist are not explained."
+      },
+      {
+        "dimension": "users",
+        "score": 0.55,
+        "rationale": "Two user archetypes are identified with stated general needs, but specific workflows, decision contexts, and pain points driving adoption are absent."
+      },
+      {
+        "dimension": "core-behaviour",
+        "score": 0.3,
+        "rationale": "An input-comparison-output flow is assumed via assumption asm-1, but blocking gap-2 means the actual gap-detection algorithm and matching rules are entirely unspecified."
+      },
+      {
+        "dimension": "data",
+        "score": 0.2,
+        "rationale": "A canonical checklist and user-provided knowledge are referenced conceptually, but blocking gap-4 leaves their structure, format, content, and representation completely undefined."
+      },
+      {
+        "dimension": "constraints",
+        "score": 0.05,
+        "rationale": "No technical, operational, business, or regulatory constraints are mentioned or implied for this tool."
+      },
+      {
+        "dimension": "edge-cases",
+        "score": 0.05,
+        "rationale": "No failure modes, handling of contradictions, ambiguous input, or boundary conditions for when the tool should or should not attempt detection are addressed."
+      },
+      {
+        "dimension": "acceptance",
+        "score": 0.3,
+        "rationale": "One behavioral success metric exists via assumption asm-4 (users identify gaps to address), but blocking gap-5 prevents concrete, measurable acceptance criteria from being defined."
+      },
+      {
+        "dimension": "integrations",
+        "score": 0,
+        "rationale": "No external systems, APIs, data sources, or third-party integrations are mentioned, suggesting this is intended as a standalone tool."
+      }
+    ],
+    "blockingGapIds": ["gap-1", "gap-2", "gap-4"],
+    "summary": "The tool's purpose and user archetypes are reasonably clear, but three blocking gaps prevent meaningful specification: input method mechanics, gap-detection logic, and knowledge-structure definition are all unspecified. Constraints, edge-cases, and concrete acceptance criteria remain entirely undefined."
+  },
+  "usage": {
+    "operation": "assess",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "inputTokens": 924,
+    "outputTokens": 4214,
+    "costMinorUnits": 2.1994000000000002
+  }
+}

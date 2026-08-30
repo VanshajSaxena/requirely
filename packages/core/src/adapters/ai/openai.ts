@@ -1,6 +1,6 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import type { Effort, StructuredGenerator } from '../../domain/index.ts';
-import { type EffortMapper, vercelStructuredGenerator } from './vercel.ts';
+import type { StructuredGenerator } from '../../domain/index.ts';
+import { vercelStructuredGenerator } from './vercel.ts';
 
 /**
  * OpenAI, via the AI SDK.
@@ -9,27 +9,19 @@ import { type EffortMapper, vercelStructuredGenerator } from './vercel.ts';
  * always leaks its assumptions unnoticed — you cannot tell a port from a
  * pass-through until something else has to fit through it.
  *
- * Note how differently `effort` lands: Anthropic takes a *token budget* for
- * extended thinking, OpenAI takes a named `reasoningEffort` level. Neither
- * spelling reached the engine, which is the evidence the domain concept was
- * real rather than one vendor's parameter wearing a generic name.
+ * It kept that job even as both adapters shrank to this. `effort` now reaches
+ * every vendor through one spec-level `reasoning` option, and this provider
+ * resolves it differently from Anthropic's: it falls back to `reasoning` only
+ * when `providerOptions.openai.reasoningEffort` is unset, and only sends it at
+ * all for models it classifies as reasoning models. Same domain concept, two
+ * unrelated resolutions — which is still the evidence, just observed one layer
+ * further down than Phase 4 looked.
  */
-
-const REASONING_EFFORT: Record<Effort, string> = {
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
-};
 
 export interface OpenAIConfig {
   readonly apiKey: string;
   readonly model: string;
 }
-
-/** Exported so the mapping is assertable without a network call or a mock model. */
-export const openaiEffort: EffortMapper = (effort) => ({
-  openai: { reasoningEffort: REASONING_EFFORT[effort ?? 'medium'] },
-});
 
 export function openaiStructuredGenerator(config: OpenAIConfig): StructuredGenerator {
   const openai = createOpenAI({ apiKey: config.apiKey });
@@ -38,6 +30,5 @@ export function openaiStructuredGenerator(config: OpenAIConfig): StructuredGener
     provider: 'openai',
     model: openai(config.model),
     modelId: config.model,
-    mapEffort: openaiEffort,
   });
 }

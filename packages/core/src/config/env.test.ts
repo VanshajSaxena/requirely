@@ -44,6 +44,31 @@ describe('loadConfig', () => {
     expect(() => loadConfig(FAKE_PROVIDERS)).not.toThrow();
   });
 
+  it("lets a text-only session run on one vendor without the other vendor's key", () => {
+    // The bug this closes: transcription defaults to `openai` and the credential
+    // check is unconditional, so an Anthropic-only setup died at startup over a
+    // capability it was never going to reach.
+    expect(() =>
+      loadConfig({
+        REQUIRELY_REASONING_PROVIDER: 'anthropic',
+        ANTHROPIC_API_KEY: 'sk-a',
+        REQUIRELY_TRANSCRIPTION_PROVIDER: 'none',
+      }),
+    ).not.toThrow();
+  });
+
+  it('still fails eagerly for a provider that will make calls', () => {
+    // `none` narrows the eager check, it does not weaken it: choosing a real
+    // provider without its key must still fail at startup rather than mid-session.
+    expect(() =>
+      loadConfig({
+        REQUIRELY_REASONING_PROVIDER: 'anthropic',
+        ANTHROPIC_API_KEY: 'sk-a',
+        REQUIRELY_TRANSCRIPTION_PROVIDER: 'openai',
+      }),
+    ).toThrow(ConfigError);
+  });
+
   it('coerces the question budget and rejects non-positive values', () => {
     expect(loadConfig({ ...FAKE_PROVIDERS, REQUIRELY_QUESTION_BUDGET: '5' }).questionBudget).toBe(
       5,

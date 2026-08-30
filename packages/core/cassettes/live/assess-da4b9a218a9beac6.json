@@ -1,0 +1,63 @@
+{
+  "operation": "assess",
+  "model": "claude-haiku-4-5",
+  "recordedAt": "2026-08-28T17:10:10.004Z",
+  "preview": {
+    "instructions": "You judge how completely a product is understood — you do NOT decide whether it\nis complete enough. That decision is made elsewhere from your scores.\n\nScore each dimension from 0 to 1:\n- purpose: what this is and why it exists\n- users: who it serves and what they need\n- core-behaviour: what the system actually does\n- data: what it stores and what shape that takes\n- constraints: technical, business, regulatory, operational limits\n- edge-cases: failure modes and boundaries\n- acceptance: how anyone…",
+    "input": "# Understanding to assess\n## Product\none-liner: A tool that extracts what you know about a product and identifies what is missing\npurpose: To help users consolidate their understanding of a product and surface gaps in their thinking\nusers: Product managers, Teams exploring new ideas\n\n## Open gaps\n- [gap-1] purpose/Input method BLOCKING\n- [gap-2] core-behaviour/Gap detection logic BLOCKING\n- [gap-3] core-behaviour/Output presentation\n- [gap-4] data/Knowledge structure BLOCKING\n- [gap-5] acceptanc…"
+  },
+  "value": {
+    "coverage": [
+      {
+        "dimension": "purpose",
+        "score": 0.7,
+        "rationale": "Core purpose is clearly stated—extract and consolidate product understanding and identify gaps—but the blocking gap on input method (gap-1) means we don't fully understand how users will provide the knowledge to extract."
+      },
+      {
+        "dimension": "users",
+        "score": 0.6,
+        "rationale": "User types are identified (product managers, teams exploring ideas) and their general need (consolidate understanding, identify gaps) is stated, but specific workflows and requirements remain unclear without knowing input/output mechanisms."
+      },
+      {
+        "dimension": "core-behaviour",
+        "score": 0.25,
+        "rationale": "High-level behavior is stated but severely constrained by two blocking gaps: how input is received (gap-1) and how the system actually detects gaps (gap-2), plus a non-blocking gap on output presentation (gap-3) means the core mechanics are not understood."
+      },
+      {
+        "dimension": "data",
+        "score": 0.15,
+        "rationale": "No information on what data is stored, what structure represents product knowledge, or how that structure evolves; blocking gap-4 on knowledge structure prevents understanding the data model entirely."
+      },
+      {
+        "dimension": "constraints",
+        "score": 0.05,
+        "rationale": "No documented constraints regarding technical limits, business rules, operational requirements, or regulatory obligations."
+      },
+      {
+        "dimension": "edge-cases",
+        "score": 0.15,
+        "rationale": "No documented failure modes or boundary conditions; unclear how the system handles incomplete user input, incorrect gap identification, or users' metacognitive blind spots about their own knowledge."
+      },
+      {
+        "dimension": "acceptance",
+        "score": 0.05,
+        "rationale": "Blocking gap-5 on success criteria means there is no documented way to verify the tool consolidates understanding correctly or identifies the right gaps."
+      },
+      {
+        "dimension": "integrations",
+        "score": 0.1,
+        "rationale": "No information on required integrations or external systems the tool must communicate with or depend on."
+      }
+    ],
+    "blockingGapIds": ["gap-1", "gap-2", "gap-4"],
+    "summary": "The product has a clear high-level purpose and known user types, but understanding is critically limited by three blocking gaps: input method (gap-1), gap detection logic (gap-2), and knowledge structure (gap-4) that prevent the system from being specified. Two additional gaps (output presentation gap-3 and acceptance criteria gap-5) also constrain specification. Constraints, edge cases, data model, and integration requirements are entirely absent."
+  },
+  "usage": {
+    "operation": "assess",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "inputTokens": 827,
+    "outputTokens": 1937,
+    "costMinorUnits": 1.0512000000000001
+  }
+}

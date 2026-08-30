@@ -1,0 +1,95 @@
+{
+  "operation": "analyze",
+  "model": "claude-haiku-4-5",
+  "recordedAt": "2026-08-28T17:12:41.349Z",
+  "preview": {
+    "instructions": "You maintain an evolving understanding of a software product someone wants built.\n\nYou are given the current understanding, any new input, and any answers to\nquestions previously asked. Produce the delta that folds the new information in.\n\nYou return a DELTA — only what changed. Never restate the whole understanding.\n\nRules that are enforced in code and will reject your output if broken:\n- To change something that exists, put it in `revise` with its exact existing ID.\n- To add something new, put…",
+    "input": "# Current understanding\n## Product\none-liner: A tool that extracts what you know about a product and identifies what is missing\nproblem: Product teams often have scattered, incomplete knowledge about what they are building\npurpose: To help users consolidate their understanding of a product and surface gaps in their thinking\nuser: Product managers — Need to organize and validate their product vision\nuser: Teams exploring new ideas — Have initial thoughts but need structure\n\n## Open gaps\n- [gap-1]…"
+  },
+  "value": {
+    "product": null,
+    "requirements": {
+      "add": [],
+      "revise": [],
+      "remove": []
+    },
+    "constraints": {
+      "add": [],
+      "revise": [],
+      "remove": []
+    },
+    "assumptions": {
+      "add": [
+        {
+          "statement": "The tool will identify gaps by comparing user-provided knowledge against a canonical checklist of product planning topics",
+          "basis": "User selected 'Topics commonly covered in product planning that haven't been mentioned' as the gap detection criterion",
+          "risk": "medium",
+          "provenance": [
+            {
+              "sourceId": "qst-2",
+              "quote": "Topics commonly covered in product planning that haven't been mentioned",
+              "note": null
+            }
+          ]
+        },
+        {
+          "statement": "Business goals and success metrics are the primary dimensions the tool should assess",
+          "basis": "User explicitly selected these as dimensions of product knowledge to track",
+          "risk": "medium",
+          "provenance": [
+            {
+              "sourceId": "qst-3",
+              "quote": "Business goals and success metrics",
+              "note": null
+            }
+          ]
+        },
+        {
+          "statement": "The tool will accept free-text narrative input from users describing their product",
+          "basis": "User selected free-text narrative as the input method",
+          "risk": "low",
+          "provenance": [
+            {
+              "sourceId": "qst-4",
+              "quote": "Free-text narrative or description",
+              "note": null
+            }
+          ]
+        },
+        {
+          "statement": "Success is measured by whether users identify gaps in planning they want to address",
+          "basis": "User selected this as the success criterion for the tool",
+          "risk": "low",
+          "provenance": [
+            {
+              "sourceId": "qst-1",
+              "quote": "You've identified gaps in planning you want to address",
+              "note": null
+            }
+          ]
+        }
+      ],
+      "revise": [],
+      "remove": []
+    },
+    "contradictions": {
+      "add": [],
+      "revise": [],
+      "remove": []
+    },
+    "gaps": {
+      "add": [],
+      "revise": [],
+      "remove": [],
+      "resolve": []
+    }
+  },
+  "usage": {
+    "operation": "analyze",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "inputTokens": 4913,
+    "outputTokens": 434,
+    "costMinorUnits": 0.7083
+  }
+}

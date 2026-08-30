@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
+import { MIGRATIONS_FOLDER } from './migrations.ts';
 import type { Database } from './repositories.ts';
 import { schema } from './schema.ts';
 
@@ -29,7 +30,9 @@ export function createPostgresConnection(url: string): PostgresConnection {
     async migrate() {
       const migrationClient = postgres(url, { max: 1 });
       try {
-        await migrate(drizzle(migrationClient, { schema }), { migrationsFolder: './drizzle' });
+        await migrate(drizzle(migrationClient, { schema }), {
+          migrationsFolder: MIGRATIONS_FOLDER,
+        });
       } finally {
         await migrationClient.end();
       }

@@ -1,0 +1,141 @@
+{
+  "operation": "generate-questions",
+  "model": "claude-haiku-4-5",
+  "recordedAt": "2026-08-28T17:13:58.664Z",
+  "preview": {
+    "instructions": "You write the questions that will close the most uncertainty in the fewest asks.\n\nEvery question must target one of the listed open gaps by its exact ID.\n\nGive each question 2 or more answer options when plausible answers exist, ordered\nmost-likely first. Options are the low-effort path: a user should usually be able\nto click rather than write. Give a question zero options only when the space of\nanswers is genuinely open. Never give exactly one option — that is a leading\nquestion, and it is reje…",
+    "input": "# Why we are not finished\nNot yet sufficient: coverage below the 0.70 bar for: constraints (0.05), core-behaviour (0.30), acceptance (0.30), users (0.55); 3 blocking gaps unresolved.\nWeakest dimensions, worst first: constraints, core-behaviour, acceptance, users.\n\n## Open gaps you may target\n- [gap-1] purpose/Input method: How does the user 'dump' what they know? Free text input, structured form, file upload, conversation?\n- [gap-2] core-behaviour/Gap detection logic: What criteria determine whe…"
+  },
+  "value": {
+    "questions": [
+      {
+        "gapId": "gap-2",
+        "text": "What criteria should determine whether something is a genuine gap in product knowledge?",
+        "mode": "single",
+        "allowsCustom": true,
+        "rationale": null,
+        "options": [
+          {
+            "label": "Compare against a reference template or checklist",
+            "elaboration": null
+          },
+          {
+            "label": "Pose guided questions to uncover missing knowledge",
+            "elaboration": null
+          },
+          {
+            "label": "Apply predefined rules",
+            "elaboration": null
+          },
+          {
+            "label": "Use a machine learning model",
+            "elaboration": null
+          }
+        ]
+      },
+      {
+        "gapId": "gap-4",
+        "text": "Which dimensions of product knowledge should the tool track? (Select all that apply)",
+        "mode": "multiple",
+        "allowsCustom": true,
+        "rationale": null,
+        "options": [
+          {
+            "label": "User research and personas",
+            "elaboration": null
+          },
+          {
+            "label": "Product positioning and messaging",
+            "elaboration": null
+          },
+          {
+            "label": "Feature specifications",
+            "elaboration": null
+          },
+          {
+            "label": "Use cases and workflows",
+            "elaboration": null
+          },
+          {
+            "label": "Business model and revenue",
+            "elaboration": null
+          },
+          {
+            "label": "Success metrics and KPIs",
+            "elaboration": null
+          },
+          {
+            "label": "Technical architecture",
+            "elaboration": null
+          },
+          {
+            "label": "Roadmap and strategy",
+            "elaboration": null
+          },
+          {
+            "label": "Constraints, risks, and dependencies",
+            "elaboration": null
+          }
+        ]
+      },
+      {
+        "gapId": "gap-1",
+        "text": "How should users input their product knowledge to the tool?",
+        "mode": "single",
+        "allowsCustom": true,
+        "rationale": null,
+        "options": [
+          {
+            "label": "Free-form text input",
+            "elaboration": null
+          },
+          {
+            "label": "Structured form with predefined fields",
+            "elaboration": null
+          },
+          {
+            "label": "File upload (documents, slides, spreadsheets)",
+            "elaboration": null
+          },
+          {
+            "label": "Conversational interaction (tool asks questions)",
+            "elaboration": null
+          }
+        ]
+      },
+      {
+        "gapId": "gap-3",
+        "text": "How should the tool present gaps it identifies to users?",
+        "mode": "single",
+        "allowsCustom": true,
+        "rationale": null,
+        "options": [
+          {
+            "label": "As a prioritized list of questions to answer",
+            "elaboration": null
+          },
+          {
+            "label": "As a checklist of missing elements",
+            "elaboration": null
+          },
+          {
+            "label": "As a ranked priority report",
+            "elaboration": null
+          },
+          {
+            "label": "As an interactive dashboard or document",
+            "elaboration": null
+          }
+        ]
+      }
+    ]
+  },
+  "usage": {
+    "operation": "generate-questions",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "inputTokens": 1100,
+    "outputTokens": 4575,
+    "costMinorUnits": 2.3975
+  }
+}

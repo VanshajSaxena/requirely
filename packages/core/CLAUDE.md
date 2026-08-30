@@ -141,33 +141,37 @@ pnpm db:studio     # drizzle studio
 pnpm --filter @requirely/core exec vitest run src/config/env.test.ts
 ```
 
-## cwd is load-bearing here
+## cwd is load-bearing here — but less than it was
 
-Four paths resolve against `process.cwd()`, so **every process touching this package
-must run with `cwd = packages/core`**. `pnpm --filter` guarantees that; nothing else does.
+Two paths still resolve against `process.cwd()`, so **any process touching those must run
+with `cwd = packages/core`**. `pnpm --filter` guarantees that; nothing else does.
 
-| Path | Where |
-| --- | --- |
-| `migrationsFolder: './drizzle'` | `src/adapters/storage/postgres/client.ts` |
-| `migrationsFolder: './drizzle'` | `src/adapters/storage/postgres/testing.ts` |
-| `schema: './src/…/schema.ts'`, `out: './drizzle'` | `drizzle.config.ts` |
-| `loadEnvFile(path = '.env')` | `src/config/env.ts` — resolves against cwd, and swallows a missing file, so a mis-pathed `.env` is indistinguishable from an absent one |
+| Path | Where | Status |
+| --- | --- | --- |
+| `schema: './src/…/schema.ts'`, `out: './drizzle'` | `drizzle.config.ts` | still cwd-relative |
+| `loadEnvFile(path = '.env')` | `src/config/env.ts` | still cwd-relative, and it **swallows a missing file**, so a mis-pathed `.env` is indistinguishable from an absent one |
+| ~~`migrationsFolder: './drizzle'`~~ | `postgres/client.ts`, `postgres/testing.ts` | **fixed in Phase 7** — both read `MIGRATIONS_FOLDER` from `postgres/migrations.ts`, resolved with `import.meta.dirname` |
 
-Consequences:
+The migrations fix is the prediction in this file coming true: *"the first server-side consumer
+not launched from this directory will hit this for real"* — the CLI was that consumer, and
+running it from `apps/cli` would have looked for `apps/cli/drizzle`, found nothing, and either
+migrated zero tables or failed with a path the user has no reason to recognise. Verified from a
+foreign cwd: `cd /tmp && node -e "import(…/migrations.ts)"` resolves to
+`packages/core/drizzle`.
 
-- **vitest config is per-package, not a root `projects` config.** Vitest 4 does not
-  `chdir` per project (verified: no `process.chdir` in the installed package), so a
-  root-level run would resolve `./drizzle` to the repo root and fail every PGlite test
-  inside `migrate()`.
+Consequences that remain:
+
 - **Root `db:*` scripts are `--filter` delegations, never direct invocations.** A root
-  `drizzle-kit generate` would write `out: './drizzle'` to the repo root, creating a
-  second, divergent migration history while the real one sits untouched.
-- **`client.ts` is production code.** The first server-side consumer not launched from
-  this directory will hit this for real. The fix when that happens is
-  `join(import.meta.dirname, '../../../../drizzle')`, not a cwd convention.
-- **The root `.env` is not found by default.** `loadEnvFile()` with no argument looks in
-  `packages/core`. Entry points should pass an explicit module-relative path — they are
-  the only code that knows where they sit. Nothing calls it yet.
+  `drizzle-kit generate` would write `out: './drizzle'` to the repo root, creating a second,
+  divergent migration history while the real one sits untouched.
+- **`loadEnvFile()` does not find the root `.env`.** With no argument it looks in
+  `packages/core`. Entry points should pass an explicit module-relative path — they are the only
+  code that knows where they sit. `apps/cli` does exactly that.
+- **vitest config is still per-package**, but the *reason* has changed. It used to be that a
+  root-level run would resolve `./drizzle` to the repo root and fail every PGlite test inside
+  `migrate()`; that specific failure is gone. What remains is ordinary per-package config
+  ownership. Do not treat "we could now move it" as "we should" without re-measuring — Vitest 4
+  still does not `chdir` per project.
 
 ## Toolchain constraints worth knowing before writing code
 

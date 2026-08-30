@@ -2,9 +2,7 @@ import { MockLanguageModelV4 } from 'ai/test';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { CapabilityError, OPERATION } from '../../domain/index.ts';
-import { anthropicEffort } from './anthropic.ts';
-import { openaiEffort } from './openai.ts';
-import { vercelStructuredGenerator } from './vercel.ts';
+import { reasoningFor, vercelStructuredGenerator } from './vercel.ts';
 
 /**
  * The provider adapters, without a key or a network call.
@@ -44,38 +42,37 @@ const modelReturning = (text: string) =>
     })) as unknown as NonNullable<MockDoGenerate['doGenerate']>,
   });
 
-const generatorOver = (model: MockLanguageModelV4) =>
-  vercelStructuredGenerator({
-    provider: 'test',
-    model,
-    modelId: 'mock-1',
-    mapEffort: () => ({}),
+const generatorOver = (model: MockLanguageModelV4, modelId = 'mock-1') =>
+  vercelStructuredGenerator({ provider: 'test', model, modelId });
+
+describe('effort — one vendor-neutral setting, resolved per model', () => {
+  it('sends `effort` to the provider as the spec-level `reasoning` option', async () => {
+    // Asserted through the real request path rather than by checking a mapper's
+    // return value. That distinction is the whole reason this file changed: the
+    // old tests asserted a hand-written table back to itself and passed while
+    // the table sent a parameter `claude-opus-5` rejects with a 400.
+    const model = modelReturning('{"value":"ok"}');
+    await generatorOver(model).generate(Shape, { ...request, effort: 'high' });
+
+    expect(model.doGenerateCalls[0]?.reasoning).toBe('high');
   });
 
-describe('effort mapping — the test of whether `effort` was a domain concept', () => {
-  it('Anthropic spends it as an extended-thinking budget', () => {
-    // `low` disables thinking outright: rewording a question needs no deliberation.
-    expect(anthropicEffort('low')).toEqual({});
-    expect(anthropicEffort('high')).toEqual({
-      anthropic: { thinking: { type: 'enabled', budgetTokens: 12_000 } },
-    });
+  it('defaults to medium when the engine expresses no preference', async () => {
+    const model = modelReturning('{"value":"ok"}');
+    await generatorOver(model).generate(Shape, request);
+
+    expect(model.doGenerateCalls[0]?.reasoning).toBe('medium');
+    expect(reasoningFor(undefined)).toBe(reasoningFor('medium'));
   });
 
-  it('OpenAI spends it as a named reasoning level', () => {
-    expect(openaiEffort('high')).toEqual({ openai: { reasoningEffort: 'high' } });
-    expect(openaiEffort('low')).toEqual({ openai: { reasoningEffort: 'low' } });
-  });
-
-  it('two vendors, two spellings, neither reaching the engine', () => {
-    // If `effort` had been one vendor's parameter wearing a generic name, these
-    // two would look alike. They do not — which is the evidence the port held.
-    expect(Object.keys(anthropicEffort('high'))).toEqual(['anthropic']);
-    expect(Object.keys(openaiEffort('high'))).toEqual(['openai']);
-  });
-
-  it('defaults to medium when the engine expresses no preference', () => {
-    expect(anthropicEffort(undefined)).toEqual(anthropicEffort('medium'));
-    expect(openaiEffort(undefined)).toEqual(openaiEffort('medium'));
+  it('maps every Effort the domain can produce', () => {
+    // Exhaustive by construction: `REASONING` is a Record over `Effort`, so
+    // adding a level to the domain fails to compile until it is mapped here.
+    expect([reasoningFor('low'), reasoningFor('medium'), reasoningFor('high')]).toEqual([
+      'low',
+      'medium',
+      'high',
+    ]);
   });
 });
 
@@ -90,10 +87,23 @@ describe('vercelStructuredGenerator', () => {
       model: 'mock-1',
       inputTokens: 120,
       outputTokens: 34,
-      // Null rather than 0: there is no price table yet, and `sumUsage`
-      // distinguishes "not reported" from "free".
+      // `mock-1` is not in the price table, so null rather than 0 — `sumUsage`
+      // keeps "not reported" apart from "free". The priced path is asserted
+      // below, and the arithmetic in pricing.test.ts.
       costMinorUnits: null,
     });
+  });
+
+  it('prices the call when the model id is known, so cost is stored and not merely printed', async () => {
+    const result = await generatorOver(
+      modelReturning('{"value":"ok"}'),
+      'claude-haiku-4-5',
+    ).generate(Shape, request);
+
+    // 120 input @ 100 minor/MTok + 34 output @ 500 minor/MTok. Fractional cents
+    // on purpose: rounding each call up to a whole cent would report a cheap
+    // session at many times its real price.
+    expect(result.usage.costMinorUnits).toBeCloseTo(0.029, 6);
   });
 
   it('sends instructions as system and input as prompt, so a stable prefix stays cacheable', async () => {

@@ -4,6 +4,8 @@ import {
   type Generated,
   type GenerationRequest,
   type StructuredGenerator,
+  sumUsage,
+  Usage,
 } from '../../domain/index.ts';
 import { type Logger, silentLogger } from '../../observability/logger.ts';
 
@@ -17,9 +19,21 @@ import { type Logger, silentLogger } from '../../observability/logger.ts';
  * adapters to the one job of translating a vendor's shapes.
  *
  * Observability is the point as much as recovery. Every attempt past the first
- * logs `{ operation, attempt, reason }`, and because each attempt is a separate
- * call to the inner generator, a turn whose `usage` array holds more entries
- * than it made operations is visibly a turn that retried — no counter needed.
+ * logs `{ operation, attempt, reason, ... }`, which is how "how often does a real
+ * model return output that fails schema validation?" gets a number.
+ *
+ * **A claim that used to live here was wrong**, and is worth recording because it
+ * was wrong in the direction that flatters: it said a retried turn was visible
+ * from its `usage` array holding more entries than the turn had operations. It
+ * never did. A failed attempt *throws*, so its usage died with the exception and
+ * the array kept exactly one entry per operation — the turn silently reported the
+ * cost of its last attempt only. The log line was the sole real signal, and the
+ * spend was under-reported by a plausible-looking amount.
+ *
+ * Fixed by carrying `CapabilityError.usage` out of the adapter and folding the
+ * wasted attempts into the usage this decorator returns. Pinned by a test, and
+ * the fake now bills for failed attempts too — a fake that returned invalid
+ * output for free would have let the same bug pass every future test.
  *
  * Only *validation* failures retry. A missing API key or a 401 is not going to
  * succeed on the second try; retrying it just spends the user's money slower.
@@ -55,6 +69,10 @@ export function withValidationRetry(
   return {
     async generate<T>(schema: z.ZodType<T>, request: GenerationRequest): Promise<Generated<T>> {
       let lastReason = 'unknown';
+      // A failed attempt is billed like any other. Collecting it here is the
+      // difference between reporting what a recovered call cost and reporting
+      // only its last, successful attempt.
+      const wasted: Usage[] = [];
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         const augmented: GenerationRequest =
@@ -68,14 +86,16 @@ export function withValidationRetry(
             logger.info('structured generation recovered after retry', {
               operation: request.operation,
               attempts: attempt,
+              wastedTokens: sumUsage(wasted).inputTokens + sumUsage(wasted).outputTokens,
             });
           }
-          return result;
+          return wasted.length === 0 ? result : { ...result, usage: fold(result.usage, wasted) };
         } catch (error) {
           // Anything that is not a schema disagreement is not worth repeating.
           if (!isValidationFailure(error)) throw error;
 
           lastReason = describe(error);
+          if (error.usage !== null) wasted.push(error.usage);
           logger.warn('model output failed schema validation', {
             operation: request.operation,
             attempt,
@@ -99,6 +119,23 @@ export function withValidationRetry(
  * adapter reports them the same way. That flag is the contract — sniffing error
  * messages would make this quietly stop working the day a vendor reworded one.
  */
+/**
+ * One `Usage` for the whole call: the successful attempt plus every wasted one.
+ *
+ * Merged into a single entry rather than appended as extra entries because
+ * `Generated.usage` is one value per call, and because operation, provider and
+ * model are identical across attempts — only the tokens differ.
+ */
+function fold(succeeded: Usage, wasted: readonly Usage[]): Usage {
+  const total = sumUsage([succeeded, ...wasted]);
+  return Usage.parse({
+    ...succeeded,
+    inputTokens: total.inputTokens,
+    outputTokens: total.outputTokens,
+    costMinorUnits: total.costMinorUnits,
+  });
+}
+
 function isValidationFailure(error: unknown): error is CapabilityError {
   return error instanceof CapabilityError && error.retryable;
 }
