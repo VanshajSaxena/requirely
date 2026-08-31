@@ -1,6 +1,6 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { z } from 'zod';
-import type { StructuredGenerator } from '../../domain/index.ts';
+import type { GenerationMethod, StructuredGenerator } from '../../domain/index.ts';
+import { type GrammarCaps, methodFor } from './method.ts';
 import { vercelStructuredGenerator } from './vercel.ts';
 
 /**
@@ -67,38 +67,31 @@ import { vercelStructuredGenerator } from './vercel.ts';
  * unreachable — if it ever fires in production, that test has a gap.
  */
 
-/** Anthropic's documented ceiling for grammar-compiled schemas. */
-const GRAMMAR_OPTIONAL_LIMIT = 24;
-
 /**
- * Counted once per schema and cached: these are module constants, so the same
- * object arrives on every call and `z.toJSONSchema` on the delta is not cheap.
+ * What Anthropic will compile, and what its escape hatch costs.
+ *
+ * `toolModeForbidsThinking` is the entry that makes this more than a size limit.
+ * `jsonTool` forces `tool_choice`, and forced tool use rejects extended thinking
+ * outright — so for a high-effort operation, dropping to `tool` trades away the
+ * deliberation that made it high-effort in the first place. `chooseMethod` reads
+ * that and prefers `prompted` in exactly that case.
  */
-const overLimit = new WeakMap<z.ZodType<unknown>, boolean>();
+const ANTHROPIC_CAPS: GrammarCaps = {
+  optional: 24,
+  union: 16,
+  toolModeForbidsThinking: true,
+};
 
-function exceedsGrammarLimit(schema: z.ZodType<unknown>): boolean {
-  const cached = overLimit.get(schema);
-  if (cached !== undefined) return cached;
-
-  // `io: 'input'` is the shape the model must produce — the side where a Zod
-  // `.default()` becomes an optional property, which is what Anthropic counts.
-  let optional = 0;
-  const walk = (node: unknown): void => {
-    if (node === null || typeof node !== 'object') return;
-    const record = node as Record<string, unknown>;
-    const properties = record['properties'];
-    if (record['type'] === 'object' && properties !== null && typeof properties === 'object') {
-      const required = new Set(Array.isArray(record['required']) ? record['required'] : []);
-      optional += Object.keys(properties).filter((key) => !required.has(key)).length;
-    }
-    for (const value of Object.values(record)) walk(value);
-  };
-  walk(z.toJSONSchema(schema, { io: 'input' }));
-
-  const result = optional > GRAMMAR_OPTIONAL_LIMIT;
-  overLimit.set(schema, result);
-  return result;
-}
+/** Vendor spelling for a chosen method. Mechanical once the choice is made. */
+const OPTIONS_FOR: Record<GenerationMethod, Record<string, Record<string, unknown>> | undefined> = {
+  constrained: { anthropic: { structuredOutputMode: 'outputFormat' } },
+  // Thinking must be disabled explicitly, not merely left unset: provider
+  // options take precedence over the `reasoning` setting in the SDK, and some
+  // models default thinking on — which this mode rejects.
+  tool: { anthropic: { structuredOutputMode: 'jsonTool', thinking: { type: 'disabled' } } },
+  // No structured-output feature involved at all; `generateText` is the call.
+  prompted: undefined,
+};
 
 export interface AnthropicConfig {
   readonly apiKey: string;
@@ -112,12 +105,7 @@ export function anthropicStructuredGenerator(config: AnthropicConfig): Structure
     provider: 'anthropic',
     model: anthropic(config.model),
     modelId: config.model,
-    providerOptionsFor: (schema) =>
-      exceedsGrammarLimit(schema)
-        ? // Thinking must be disabled explicitly, not merely left unset: provider
-          // options take precedence over the `reasoning` setting in the SDK, and
-          // some models default thinking on.
-          { anthropic: { structuredOutputMode: 'jsonTool', thinking: { type: 'disabled' } } }
-        : { anthropic: { structuredOutputMode: 'outputFormat' } },
+    methodFor: (schema, effort) => methodFor(schema, ANTHROPIC_CAPS, effort === 'high'),
+    optionsFor: (method) => OPTIONS_FOR[method],
   });
 }

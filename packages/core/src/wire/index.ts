@@ -7,6 +7,7 @@
  * shaped by what *grammar compilers* can take, which is a fact about every
  * provider, not about one.
  */
+export * from './budget.ts';
 export * from './codec.ts';
 export * from './delta.ts';
 export * from './sentinel.ts';

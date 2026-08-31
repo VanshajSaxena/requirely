@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { anthropicStructuredGenerator } from '../adapters/ai/anthropic.ts';
+import { type GrammarCaps, type MethodChoice, methodFor } from '../adapters/ai/method.ts';
 import { isPriced } from '../adapters/ai/pricing.ts';
 import { recordingStructuredGenerator } from '../adapters/ai/recording.ts';
 import { withValidationRetry } from '../adapters/ai/retry.ts';
@@ -13,6 +14,7 @@ import {
   type Session,
   sumUsage,
   type TurnCommit,
+  UnderstandingAssessment,
   type Usage,
 } from '../domain/index.ts';
 import { fixedClock, sequentialIdGenerator } from '../domain/testing/fakes.ts';
@@ -20,6 +22,7 @@ import { type EngineDeps, runTurn, type TurnRequest } from '../engine/loop.ts';
 import { STRATEGIES } from '../engine/strategies.ts';
 import { ingestText } from '../ingestion/text.ts';
 import { recordingLogger } from '../observability/logger.ts';
+import { UnderstandingDeltaCodec } from '../wire/index.ts';
 import { answerAll, SOURCE_TEXT } from './scenario.ts';
 
 /**
@@ -107,6 +110,18 @@ function hasCassettesFor(model: string): boolean {
  * cassette recorded against a schema that no longer exists is evidence for a
  * claim that is no longer being made. Deleting them makes the skip honest again.
  */
+/**
+ * Anthropic's caps, restated here only so the harness can *report* which method
+ * each schema lands on. The adapter owns the real table; duplicating three
+ * numbers for a log line is cheaper than exporting a private constant, and a
+ * drift here changes a printed string rather than a request.
+ */
+const ANTHROPIC_CAPS_FOR_REPORT: GrammarCaps = {
+  optional: 24,
+  union: 16,
+  toolModeForbidsThinking: true,
+};
+
 const RUNNABLE = LIVE || hasCassettesFor(MODEL);
 
 if (!RUNNABLE) {
@@ -176,6 +191,24 @@ describe.skipIf(!RUNNABLE)(`the engine against ${MODEL} (${LIVE ? 'RECORDING' : 
   const retriesSoFar = (): number =>
     logger.entries.filter((e) => e.message === 'model output failed schema validation').length;
 
+  /**
+   * Which generation method each call actually used, and how many repairs it
+   * needed. `runTurn` records `usage` but not `Generated.method`, so this reads
+   * the adapter's own decision through the pure function that made it — the same
+   * `chooseMethod` the adapter calls, over the same schemas.
+   *
+   * Reported rather than asserted: the right method depends on the model, and a
+   * test that pinned it would fail the day a provider raised a cap, which is the
+   * outcome we want.
+   */
+  const methodsInPlay = (): string =>
+    [
+      ['analyze', methodFor(UnderstandingDeltaCodec, ANTHROPIC_CAPS_FOR_REPORT, true)],
+      ['assess', methodFor(UnderstandingAssessment, ANTHROPIC_CAPS_FOR_REPORT, false)],
+    ]
+      .map(([name, choice]) => `${String(name)}=${(choice as MethodChoice).method}`)
+      .join(' ');
+
   async function runAndCommit(
     session: Session,
     request: TurnRequest,
@@ -203,6 +236,7 @@ describe.skipIf(!RUNNABLE)(`the engine against ${MODEL} (${LIVE ? 'RECORDING' : 
     const before = retriesSoFar();
     const first = await runAndCommit(session, { trigger: 'initial', sourceIds: [source.id] }, h);
     report('turn 1', first.turn.usage, retriesSoFar() - before);
+    console.info(`[live] methods: ${methodsInPlay()}`);
 
     // Shape, not content: a real model will not reproduce a fixture, so every
     // assertion here has to hold for any competent answer.

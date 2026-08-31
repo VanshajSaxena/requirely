@@ -10,14 +10,15 @@ provider-agnostic constraint. This file covers only what is true inside this pac
 ## Status
 
 Phases 0–6 are done, plus Phase 7 steps 0–1 (adapter fixes, cost accounting, the
-live harness and the first real model call) and **Phase 8 steps 1–2** (the domain
-reshape — a settled `Decision` tier, promotion, `Gap` deleted — and `src/wire/`,
-the sentinel-encoded flat op list the model actually sees).
+live harness and the first real model call) and **Phase 8 steps 1–3** (the domain
+reshape — a settled `Decision` tier, promotion, `Gap` deleted — `src/wire/`, the
+sentinel-encoded flat op list the model actually sees, and three generation
+methods behind one port).
 
 **Phase 7 is parked mid-flight.** The first live calls found that providers
 compile strict schemas into decoding grammars and cap their branchiness, and ours
-was 3× over. Phase 8 is that redesign; steps 3–6 (adapters, engine, projections,
-evals) are next, and Phase 7 steps 2–4 resume after.
+was 3× over. Phase 8 is that redesign; steps 4–6 (engine, projections, evals) are
+next, and Phase 7 steps 2–4 resume after.
 
 **Live cassettes are currently absent** — the Phase 7 recordings were orphaned by
 the Phase 8 schema change and re-recording is blocked on the org API spend limit.
@@ -99,11 +100,48 @@ Load-bearing details:
 
 Tests that wire adapters to the engine live in `src/integration/`, not `src/engine/` — the boundary rule forbids `engine/ → adapters/` with no test exemption.
 
+## AI adapter orientation
+
+`StructuredGenerator.generate(elicitation)` takes one object carrying the schema
+and its examples. The adapter decides **how** to ask, per request.
+
+- **Three methods, ordered by the guarantee each gives up.** `constrained` makes
+  malformed output unrepresentable but caps schema branchiness; `tool` removes
+  the cap and hands conformance back to us; `prompted` describes the schema in
+  the prompt and parses text. `prompted` is what makes this a port rather than a
+  shared spelling for two vendors that already agree.
+- **`chooseMethod` is pure**, over a `SchemaBudget` and a per-provider
+  `GrammarCaps`. No library does this — Instructor, BAML and the AI SDK all take
+  the mode as global config, so an over-large schema fails at request time.
+- **`prefersThinking` is the one non-obvious rule.** Anthropic's `jsonTool`
+  forces `tool_choice`, and forced tool use rejects extended thinking — so on a
+  high-effort call, `tool` would trade away the deliberation that made it
+  high-effort, and `prompted` is the better step down. `effort` reaches the
+  decision as a boolean, so no vendor vocabulary enters the pure function.
+- **The repair ladder is conservative on purpose.** Extract → strip trailing
+  commas → unwrap a single-key envelope, each rung reporting what it did.
+  **Truncation is never repaired**: appending closers turns a cut-off list of
+  requirements into a shorter list that looks complete.
+- **`Generated.raw` is `null` outside `prompted`.** The object path has no raw
+  text; re-serializing the parsed value and calling it raw would be a lie in the
+  place a reader would trust it.
+- **`translate()` passes a `CapabilityError` straight through.** Re-wrapping our
+  own already-translated error silently downgraded `retryable: true` to false, so
+  a recoverable prompted failure was never retried. Caught by a test.
+- **Replay validates against `schema.out`, not `schema`.** A cassette stores the
+  *domain* value, but a codec's `.parse` expects the *wire* shape — so
+  `codec.parse(domainValue)` fails, and every replay would break with what looks
+  like drift. `ZodCodec` exposes `.out`; `recording.ts` uses it.
+
 ## Wire orientation
 
 `src/wire/` is what a model sees. `src/domain/` is what the system believes.
 Neither is derived from the other, and a `z.codec` is the only bridge.
 
+- **`wire/budget.ts` is the only schema measurer**, shared by the CI budget test,
+  the runtime method choice and the live probes. It was three copies of one
+  walker, which is three chances for them to quietly disagree about what they
+  count.
 - **`engine/steps.ts` passes `UnderstandingDeltaCodec` where it used to pass
   `UnderstandingDelta`.** A codec's input side is the wire and its output side is
   the domain, so the generator emits the flat schema and returns an ordinary

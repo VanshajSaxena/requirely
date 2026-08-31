@@ -14,7 +14,12 @@ import { withValidationRetry } from './retry.ts';
  */
 
 const Shape = z.object({ value: z.string().min(1) });
-const request = { operation: OPERATION.assess, instructions: 'be useful', input: 'hello' };
+const request = {
+  operation: OPERATION.assess,
+  instructions: 'be useful',
+  input: 'hello',
+  schema: Shape,
+};
 
 describe('the cost of a retry', () => {
   it('reports the wasted attempt as well as the successful one', async () => {
@@ -26,10 +31,10 @@ describe('the cost of a retry', () => {
       fakeStructuredGenerator({ assess: [{ wrong: 'shape' }, { value: 'ok' }] }),
     );
 
-    const recovered = await generator.generate(Shape, request);
+    const recovered = await generator.generate(request);
     const direct = await withValidationRetry(
       fakeStructuredGenerator({ assess: [{ value: 'ok' }] }),
-    ).generate(Shape, request);
+    ).generate(request);
 
     expect(recovered.value).toEqual({ value: 'ok' });
     // Strictly more than the same call made without a retry — the difference is
@@ -46,13 +51,13 @@ describe('withValidationRetry', () => {
     const fake = fakeStructuredGenerator({ assess: [{ value: '' }, { value: 'corrected' }] });
     const generator = withValidationRetry(fake, { maxAttempts: 3 });
 
-    expect((await generator.generate(Shape, request)).value).toEqual({ value: 'corrected' });
+    expect((await generator.generate(request)).value).toEqual({ value: 'corrected' });
     expect(fake.calls).toHaveLength(2);
   });
 
   it('shows the model what was wrong instead of just asking again', async () => {
     const fake = fakeStructuredGenerator({ assess: [{ value: '' }, { value: 'ok' }] });
-    await withValidationRetry(fake, { maxAttempts: 2 }).generate(Shape, request);
+    await withValidationRetry(fake, { maxAttempts: 2 }).generate(request);
 
     const second = fake.calls[1];
     expect(second?.input).toContain('did not satisfy the required schema');
@@ -65,7 +70,7 @@ describe('withValidationRetry', () => {
     const fake = fakeStructuredGenerator({ assess: [{ value: '' }, { value: '' }] });
     const generator = withValidationRetry(fake, { maxAttempts: 2 });
 
-    await expect(generator.generate(Shape, request)).rejects.toThrow(CapabilityError);
+    await expect(generator.generate(request)).rejects.toThrow(CapabilityError);
     expect(fake.calls).toHaveLength(2);
   });
 
@@ -76,7 +81,7 @@ describe('withValidationRetry', () => {
     const fake = fakeStructuredGenerator({ assess: [] });
     const generator = withValidationRetry(fake, { maxAttempts: 3 });
 
-    await expect(generator.generate(Shape, request)).rejects.toThrow(/no scripted response/);
+    await expect(generator.generate(request)).rejects.toThrow(/no scripted response/);
     expect(fake.calls).toHaveLength(1);
   });
 
@@ -84,7 +89,7 @@ describe('withValidationRetry', () => {
     const logger = recordingLogger();
     const fake = fakeStructuredGenerator({ assess: [{ value: '' }, { value: 'ok' }] });
 
-    await withValidationRetry(fake, { maxAttempts: 3, logger }).generate(Shape, request);
+    await withValidationRetry(fake, { maxAttempts: 3, logger }).generate(request);
 
     const warnings = logger.entries.filter((entry) => entry.level === 'warn');
     expect(warnings).toHaveLength(1);
@@ -96,7 +101,7 @@ describe('withValidationRetry', () => {
     const logger = recordingLogger();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'fine' }] });
 
-    await withValidationRetry(fake, { logger }).generate(Shape, request);
+    await withValidationRetry(fake, { logger }).generate(request);
 
     expect(fake.calls).toHaveLength(1);
     expect(fake.calls[0]?.input).toBe('hello');

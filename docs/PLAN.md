@@ -89,8 +89,8 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 
 ## 3. Status
 
-**Done:** phases 0–6, Phase 7 steps 0–1, Phase 8 steps 1–2.
-**232 tests, 23 files.** `pnpm verify` covers typecheck (3 packages) + lint +
+**Done:** phases 0–6, Phase 7 steps 0–1, Phase 8 steps 1–3.
+**273 tests, 25 files.** `pnpm verify` covers typecheck (3 packages) + lint +
 2 boundary scripts + node-runnable + tests.
 
 **Phase 7 is parked mid-flight and Phase 8 is in progress.** The first live model
@@ -113,8 +113,9 @@ Phase 8 is the redesign that follows. Phase 7 steps 2–4 (the `./server` export
 | 7 CLI — steps 0/1 | done: adapter fixes, cost accounting, the live harness, the first real call |
 | 7 CLI — steps 2–4 | **parked** behind Phase 8 |
 | 8 Harness redesign — step 1 (domain) | done — `Decision` tier, promotion, `Gap` deleted |
-| 8 step 2 (wire + codec) | **done** — 0 optional / 0 union / 1.9 KB, inside every cap |
-| **8 steps 3–6** | **next** — adapters · engine · projections · evals |
+| 8 step 2 (wire + codec) | done — 0 optional / 0 union / 1.9 KB, inside every cap |
+| 8 step 3 (adapters) | **done** — three methods behind one port, chosen per request |
+| **8 steps 4–6** | **next** — engine · projections · evals |
 
 ### What Phase 5 added
 
@@ -213,12 +214,40 @@ domain delta a step ago.
   `domain/` may not reach `wire/`. Re-proved with four planted violations plus a
   negative control.
 
+### What Phase 8 step 3 changed
+
+The port stopped assuming a provider can take a schema. See DECISIONS.md for the
+reasoning; the shape:
+
+- **`generate(elicitation)`** replaces `generate(schema, request)`. The schema and
+  its examples travel as one contract, because they are one.
+- **Three methods**, chosen per request by `chooseMethod(budget, caps,
+  prefersThinking)` — a pure function over a measurement, testable with no key.
+  `prompted` is the floor: it assumes only that a model can produce text.
+- **`wire/budget.ts`** is the single schema measurer, shared by the CI budget
+  test, the runtime method choice and the live probes. It was three copies.
+- **A repair ladder** — extract → strip trailing commas → unwrap an envelope —
+  each rung pure, conservative and self-reporting. Truncation is deliberately not
+  repaired.
+- **`Generated<T>` gained `method`, `raw`, `repairs`**, and cassettes store the
+  first and last so a replayed eval reports what really happened.
+
+Two bugs the new tests caught, both silent:
+
+- `extractJson` returned the first *balanced* span, which is `{curly}` in the
+  sentence "use {curly} braces". Balance is not JSON; candidates must parse, and
+  the longest one wins.
+- `translate()` re-wrapped a `CapabilityError` thrown by our own prompted path,
+  downgrading `retryable: true` to false — so a recoverable prompted failure was
+  never retried.
+
 ### The immediate next step
 
-**Phase 8 step 3 — adapters.** `render` / `parse` / `reask` as three hooks with a
-per-call `GenerationMethod` (`constrained` | `tool` | `prompted`), so the core
-never assumes a provider can take a schema at all; `Generated<T>` gains `raw` and
-`repairs`.
+**Phase 8 step 4 — the engine.** Sufficiency as a trajectory: is the settled
+fraction moving, and is stalling its own signal distinct from "exhausted"?
+Coverage dimensions survive as a lens but stop deciding the verdict. `Question`
+gains `rationale`, `recommends` and `because`; `QuestionOption` gains `commits`
+and `settles`.
 
 Still outstanding from Phase 7 and blocked on API spend: **one real run per
 provider**, reporting cost per turn, whether the `effort` mapping behaves

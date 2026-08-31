@@ -1,14 +1,17 @@
-import { generateObject, type LanguageModel, NoObjectGeneratedError } from 'ai';
-import type { z } from 'zod';
+import { generateObject, generateText, type LanguageModel, NoObjectGeneratedError } from 'ai';
+import { z } from 'zod';
 import {
   CapabilityError,
   type Effort,
+  type Elicitation,
   type Generated,
-  type GenerationRequest,
+  type GenerationMethod,
   type StructuredGenerator,
   Usage,
 } from '../../domain/index.ts';
+import type { MethodChoice } from './method.ts';
 import { costMinorUnitsFor } from './pricing.ts';
+import { repairToValid } from './repair.ts';
 
 /**
  * The shared body of every AI-SDK-backed adapter.
@@ -21,6 +24,18 @@ import { costMinorUnitsFor } from './pricing.ts';
  * This file and its two callers are the **only** places `ai`/`@ai-sdk/*` may be
  * imported; `scripts/check-boundaries.sh` rule 4 enforces that. Nothing above
  * this layer learns that the AI SDK exists.
+ *
+ * ## Three ways to ask, one port
+ *
+ * `constrained` and `tool` both go through `generateObject` and differ only in a
+ * provider option; `prompted` goes through `generateText` and does its own
+ * extraction and validation. The caller sees one `generate()` either way, and
+ * `Generated.method` records which happened.
+ *
+ * **`prompted` is what makes the port a port.** Without it, `StructuredGenerator`
+ * silently requires a provider with a structured-output feature — an abstraction
+ * that only abstracts over vendors that already agree. With it, the floor is
+ * "can produce text", which every model clears.
  */
 
 /**
@@ -70,73 +85,205 @@ export interface VercelAdapterConfig {
   readonly model: LanguageModel;
   readonly modelId: string;
   /**
-   * Vendor-specific request options, chosen **per request** from the schema.
+   * How this provider decides to ask, measured per request.
    *
-   * This hook was deleted along with the per-vendor effort tables and came back
-   * within the hour, which is worth recording rather than tidying away: the
-   * stated criterion for re-adding it was "a genuinely vendor-specific need",
-   * and one appeared on the first live call (see `anthropic.ts`). Deleting a
-   * seam with no user was still right — the seam that returned carries a real
-   * requirement instead of a hypothetical one.
-   *
-   * It takes the schema rather than being a static value because the need is
-   * itself schema-dependent: Anthropic's structured-output mode has to change
-   * for schemas above a size limit, and only two of our four are above it.
+   * Replaces a `providerOptionsFor` hook that returned only vendor options: with
+   * three methods the decision and the options it implies are one thing, and
+   * splitting them let a caller pick `jsonTool` without recording that it had.
+   * Omitted means "always constrained", which is right for a fake or a mock.
    */
-  readonly providerOptionsFor?:
-    | ((schema: z.ZodType<unknown>) => Record<string, Record<string, unknown>> | undefined)
+  readonly methodFor?: ((schema: z.ZodType<unknown>, effort: Effort) => MethodChoice) | undefined;
+  /**
+   * Vendor request options for a chosen method.
+   *
+   * Separate from `methodFor` because the mapping is mechanical once the method
+   * is known — `constrained` → `outputFormat`, `tool` → `jsonTool` — while the
+   * *choice* is a measurement. Keeping them apart is what lets `chooseMethod` be
+   * a pure function with no vendor vocabulary in it.
+   */
+  readonly optionsFor?:
+    | ((method: GenerationMethod) => Record<string, Record<string, unknown>> | undefined)
     | undefined;
 }
 
 export function vercelStructuredGenerator(config: VercelAdapterConfig): StructuredGenerator {
   return {
-    async generate<T>(schema: z.ZodType<T>, request: GenerationRequest): Promise<Generated<T>> {
+    async generate<T>(elicitation: Elicitation<T>): Promise<Generated<T>> {
+      const effort = elicitation.effort ?? 'medium';
+      const choice: MethodChoice | undefined = config.methodFor?.(
+        elicitation.schema as z.ZodType<unknown>,
+        effort,
+      );
+      const method = choice?.method ?? 'constrained';
+
       try {
-        const result = await generateObject({
-          model: config.model,
-          schema,
-          // `instructions` is stable per operation and `input` is the volatile
-          // part, so providers that cache on a system prefix can do so.
-          system: request.instructions,
-          prompt: request.input,
-          reasoning: reasoningFor(request.effort),
-          ...withProviderOptions(config, schema),
-          ...(request.maxOutputTokens === undefined
-            ? {}
-            : { maxOutputTokens: request.maxOutputTokens }),
-        });
-
-        const inputTokens = result.usage.inputTokens ?? 0;
-        const outputTokens = result.usage.outputTokens ?? 0;
-
-        return {
-          value: result.object as T,
-          usage: Usage.parse({
-            operation: request.operation,
-            provider: config.provider,
-            model: config.modelId,
-            inputTokens,
-            outputTokens,
-            // null for a model the price table does not know — `sumUsage`
-            // distinguishes that from a genuine zero, so an unpriced model
-            // reads "cost unknown" rather than confidently reading "free".
-            costMinorUnits: costMinorUnitsFor(config.modelId, inputTokens, outputTokens),
-          }),
-        };
+        return method === 'prompted'
+          ? await viaPrompt(config, elicitation, effort)
+          : await viaObject(config, elicitation, effort, method);
       } catch (error) {
-        throw translate(error, config.provider, request, config.modelId);
+        throw translate(error, config.provider, elicitation, config.modelId);
       }
     },
   };
 }
 
-/** Spread-or-omit, so an adapter with no vendor options sends no key at all. */
-function withProviderOptions(
+/**
+ * `constrained` and `tool`: the SDK renders the schema and validates the reply.
+ *
+ * Passing `elicitation.schema` straight through is what makes the wire codec
+ * work with no adapter change — `@ai-sdk/provider-utils` converts with
+ * `io: 'input'` and validates with `safeParseAsync`, so a codec emits the wire
+ * schema and returns a decoded domain value.
+ */
+async function viaObject<T>(
   config: VercelAdapterConfig,
-  schema: z.ZodType<unknown>,
-): Record<string, never> {
-  const options = config.providerOptionsFor?.(schema);
-  return (options === undefined ? {} : { providerOptions: options }) as Record<string, never>;
+  elicitation: Elicitation<T>,
+  effort: Effort,
+  method: GenerationMethod,
+): Promise<Generated<T>> {
+  // Spread-or-omit through a `Record<string, never>` cast: under
+  // `exactOptionalPropertyTypes` an inline `{ k: v } | {}` spread produces an
+  // optional property the SDK's option type will not accept.
+  const options = config.optionsFor?.(method);
+  const providerOptions = (options === undefined ? {} : { providerOptions: options }) as Record<
+    string,
+    never
+  >;
+  const ceiling = (
+    elicitation.maxOutputTokens === undefined
+      ? {}
+      : { maxOutputTokens: elicitation.maxOutputTokens }
+  ) as Record<string, never>;
+
+  const result = await generateObject({
+    model: config.model,
+    schema: elicitation.schema,
+    // `instructions` is stable per operation and `input` is the volatile
+    // part, so providers that cache on a system prefix can do so.
+    system: elicitation.instructions,
+    prompt: elicitation.input,
+    reasoning: reasoningFor(effort),
+    ...providerOptions,
+    ...ceiling,
+  });
+
+  return {
+    value: result.object as T,
+    usage: usageOf(config, elicitation, result.usage),
+    method,
+    // No raw text to keep: the SDK hands back a parsed object. Re-serializing it
+    // and calling that "raw" would be a lie in the place a reader would trust it.
+    raw: null,
+    repairs: [],
+  };
+}
+
+/**
+ * `prompted`: describe the schema in words, take text back, and repair it.
+ *
+ * The floor of the ladder, and the reason `StructuredGenerator` is a real
+ * abstraction rather than a shared spelling for two vendors that already agree.
+ * Everything the other two get from the provider — rendering, extraction,
+ * validation — happens here instead.
+ */
+async function viaPrompt<T>(
+  config: VercelAdapterConfig,
+  elicitation: Elicitation<T>,
+  effort: Effort,
+): Promise<Generated<T>> {
+  const ceiling = (
+    elicitation.maxOutputTokens === undefined
+      ? {}
+      : { maxOutputTokens: elicitation.maxOutputTokens }
+  ) as Record<string, never>;
+
+  const result = await generateText({
+    model: config.model,
+    system: `${elicitation.instructions}\n\n${renderContract(elicitation)}`,
+    prompt: elicitation.input,
+    reasoning: reasoningFor(effort),
+    ...ceiling,
+  });
+
+  const usage = usageOf(config, elicitation, result.usage);
+  let parsed: z.ZodSafeParseResult<T> | undefined;
+
+  const repaired = repairToValid(result.text, (candidate) => {
+    parsed = elicitation.schema.safeParse(candidate);
+    return parsed.success;
+  });
+
+  if (!repaired.ok || parsed === undefined || !parsed.success) {
+    // `retryable: true` and the usage attached, exactly as the object path does:
+    // a prompted failure is a schema disagreement like any other, and it was
+    // billed like any other.
+    throw new CapabilityError(
+      elicitation.operation,
+      config.provider,
+      `prompted output did not satisfy the schema${
+        parsed?.success === false ? ` (${parsed.error.issues[0]?.message ?? 'invalid'})` : ''
+      }; returned: ${truncate(result.text)}`,
+      { retryable: true, usage },
+    );
+  }
+
+  return {
+    value: parsed.data,
+    usage,
+    method: 'prompted',
+    raw: result.text,
+    repairs: repaired.repairs,
+  };
+}
+
+/**
+ * The schema, as prose the model can follow.
+ *
+ * `io: 'input'` for the same reason the budget meter uses it — this must
+ * describe what the model should *produce*, which for a codec is the wire shape
+ * and not the domain one.
+ *
+ * Examples are included when the caller supplied them. This is the only method
+ * that reads them, because it is the only one with no structural guarantee: a
+ * worked example is doing the job a grammar would otherwise do, and paying
+ * tokens for one under a decoder would be spending to restate a certainty.
+ */
+function renderContract<T>(elicitation: Elicitation<T>): string {
+  const schema = JSON.stringify(
+    z.toJSONSchema(elicitation.schema as z.ZodType<unknown>, { io: 'input' }),
+  );
+
+  const examples = (elicitation.examples ?? []).map(
+    (example, index) => `Example ${index + 1}:\n${JSON.stringify(example, null, 2)}`,
+  );
+
+  return [
+    'Reply with a single JSON value and nothing else — no prose, no code fence,',
+    'no explanation. It must satisfy this JSON Schema exactly:',
+    '',
+    schema,
+    ...(examples.length === 0 ? [] : ['', 'Shaped like these:', '', ...examples]),
+  ].join('\n');
+}
+
+function usageOf<T>(
+  config: VercelAdapterConfig,
+  elicitation: Elicitation<T>,
+  usage: { inputTokens?: number | undefined; outputTokens?: number | undefined },
+): Usage {
+  const inputTokens = usage.inputTokens ?? 0;
+  const outputTokens = usage.outputTokens ?? 0;
+  return Usage.parse({
+    operation: elicitation.operation,
+    provider: config.provider,
+    model: config.modelId,
+    inputTokens,
+    outputTokens,
+    // null for a model the price table does not know — `sumUsage`
+    // distinguishes that from a genuine zero, so an unpriced model
+    // reads "cost unknown" rather than confidently reading "free".
+    costMinorUnits: costMinorUnitsFor(config.modelId, inputTokens, outputTokens),
+  });
 }
 
 /**
@@ -150,9 +297,15 @@ function withProviderOptions(
 function translate(
   error: unknown,
   provider: string,
-  request: GenerationRequest,
+  request: Elicitation<unknown>,
   modelId: string,
 ): CapabilityError {
+  // Already ours — the prompted path throws its own, correctly marked
+  // retryable. Re-wrapping it here silently downgraded it to non-retryable, so
+  // a recoverable prompted failure was never retried. Caught by a test; the
+  // catch that exists to stop vendor errors escaping was eating our own.
+  if (error instanceof CapabilityError) return error;
+
   if (NoObjectGeneratedError.isInstance(error)) {
     return new CapabilityError(
       request.operation,
@@ -175,7 +328,7 @@ function spentOn(
     usage?: { inputTokens?: number | undefined; outputTokens?: number | undefined } | undefined;
   },
   provider: string,
-  request: GenerationRequest,
+  request: Elicitation<unknown>,
   modelId: string,
 ): { usage?: Usage } {
   const inputTokens = error.usage?.inputTokens ?? 0;

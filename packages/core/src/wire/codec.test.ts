@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { applyDelta, emptyUnderstanding, UnderstandingDelta } from '../domain/index.ts';
+import { measureBudget } from './budget.ts';
 import { UnderstandingDeltaCodec } from './codec.ts';
-import { emptyOp, emptyWireDelta, type WireDelta, type WireOp } from './delta.ts';
+import { DELTA_EXAMPLE, emptyOp, emptyWireDelta, type WireDelta, type WireOp } from './delta.ts';
 
 /**
  * The wire is a contract with two readers — a grammar compiler and the domain —
@@ -31,33 +32,15 @@ describe('the wire schema fits inside a decoding grammar', () => {
    */
   const CAPS = { optional: 24, union: 16 };
 
-  const shape = (schema: z.ZodType<unknown>, io: 'input' | 'output') => {
-    const json = z.toJSONSchema(schema, { io });
-    let optional = 0;
-    let union = 0;
-    const walk = (node: unknown): void => {
-      if (node === null || typeof node !== 'object') return;
-      const record = node as Record<string, unknown>;
-      const properties = record['properties'];
-      if (record['type'] === 'object' && properties !== null && typeof properties === 'object') {
-        const required = new Set(Array.isArray(record['required']) ? record['required'] : []);
-        optional += Object.keys(properties).filter((key) => !required.has(key)).length;
-      }
-      if (
-        Array.isArray(record['anyOf']) ||
-        Array.isArray(record['oneOf']) ||
-        Array.isArray(record['type'])
-      ) {
-        union += 1;
-      }
-      for (const value of Object.values(record)) walk(value);
-    };
-    walk(json);
-    return { optional, union, bytes: JSON.stringify(json).length };
-  };
+  // One measurer, shared with the adapters that read it at runtime. It used to
+  // be three copies of the same walker — here, in `anthropic.ts`, and in a probe
+  // — which is three chances for the CI budget and the runtime check to disagree
+  // about what they are counting.
+  const shape = (schema: z.ZodType<unknown>, io: 'input' | 'output' = 'input') =>
+    measureBudget(schema, io);
 
   it('emits zero optional properties and stays under both caps', () => {
-    const measured = shape(UnderstandingDeltaCodec, 'input');
+    const measured = shape(UnderstandingDeltaCodec);
 
     // Reported, because the headroom is the interesting number: the whole point
     // is that a future field has somewhere to go.
@@ -74,8 +57,8 @@ describe('the wire schema fits inside a decoding grammar', () => {
     // The domain delta is not sendable and is not meant to be. Asserting the gap
     // rather than only the absolute number is what stops someone "simplifying"
     // the codec away by pointing the generator back at the domain schema.
-    const domain = shape(UnderstandingDelta, 'input');
-    const onWire = shape(UnderstandingDeltaCodec, 'input');
+    const domain = shape(UnderstandingDelta);
+    const onWire = shape(UnderstandingDeltaCodec);
 
     expect(domain.optional).toBeGreaterThan(CAPS.optional);
     expect(onWire.bytes * 3).toBeLessThan(domain.bytes);
@@ -365,5 +348,29 @@ describe('the limitations, pinned rather than discovered later', () => {
     );
     const after = applyDelta(emptyUnderstanding(), delta);
     expect(after.requirements[0]?.id).toBe('req-1');
+  });
+});
+
+describe('the worked example, which a prompted call teaches from', () => {
+  it('is a valid wire delta, so a drifting example fails CI rather than a session', () => {
+    // An example is a prompt, and a prompt that teaches the wrong shape is worse
+    // than no prompt at all: it produces confidently malformed output on the one
+    // method with no structural guarantee to catch it.
+    expect(() => UnderstandingDeltaCodec.parse(DELTA_EXAMPLE)).not.toThrow();
+  });
+
+  it('demonstrates the two ops a model most often gets wrong', () => {
+    // `add` leaves `id` empty; `promote` puts the *open item* in `id`, not the
+    // decision being created. Everything else is inferable from the schema.
+    const ops = DELTA_EXAMPLE.ops.map((op) => op.op);
+    expect(ops).toEqual(['add', 'promote']);
+    expect(DELTA_EXAMPLE.ops[0]?.id).toBe('');
+    expect(DELTA_EXAMPLE.ops[1]?.id).toMatch(/^req-/);
+  });
+
+  it('decodes into something the domain can apply', () => {
+    const delta = UnderstandingDeltaCodec.parse(DELTA_EXAMPLE);
+    expect(delta.requirements.add).toHaveLength(1);
+    expect(delta.decisions.promote[0]?.from).toBe('req-4');
   });
 });

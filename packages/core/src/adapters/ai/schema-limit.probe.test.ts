@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { loadEnvFile } from '../../config/env.ts';
 import { UnderstandingDelta } from '../../domain/index.ts';
+import { measureJsonSchema } from '../../wire/budget.ts';
 
 /**
  * A probe, not a test of our code: **does required-and-nullable escape
@@ -31,22 +32,15 @@ const MODEL = process.env.REQUIRELY_LIVE_MODEL ?? 'claude-haiku-4-5';
 
 type Node = Record<string, unknown>;
 
-/** Every optional property, by path — the same count Anthropic reports. */
-function countOptional(root: unknown): number {
-  let n = 0;
-  const walk = (node: unknown): void => {
-    if (node === null || typeof node !== 'object') return;
-    const rec = node as Node;
-    const props = rec['properties'];
-    if (rec['type'] === 'object' && props !== null && typeof props === 'object') {
-      const required = new Set(Array.isArray(rec['required']) ? rec['required'] : []);
-      n += Object.keys(props as Node).filter((k) => !required.has(k)).length;
-    }
-    for (const v of Object.values(rec)) walk(v);
-  };
-  walk(root);
-  return n;
-}
+/**
+ * Every optional property — the same count Anthropic reports.
+ *
+ * Shared with `wire/budget.ts` rather than re-walked here, so the number this
+ * probe sends to a live provider is the same number CI asserts and the same one
+ * `chooseMethod` reads at runtime. Three copies of this walker was three chances
+ * for them to quietly disagree.
+ */
+const countOptional = (root: unknown): number => measureJsonSchema(root).optional;
 
 /**
  * Marks every property required, allowing `null` where it was optional.

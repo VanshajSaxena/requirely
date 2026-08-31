@@ -1,9 +1,9 @@
-import type { z } from 'zod';
 import {
   CapabilityError,
   type Effort,
+  type Elicitation,
   type Generated,
-  type GenerationRequest,
+  type GenerationMethod,
   type Operation,
   type StructuredGenerator,
   sumUsage,
@@ -37,6 +37,21 @@ export interface RecordedCall {
   readonly effort: Effort | undefined;
   /** Recorded so a test can assert no call goes out without a spend ceiling. */
   readonly maxOutputTokens: number | undefined;
+  /** How many examples the engine attached, if any — see `FakeOptions.method`. */
+  readonly examples: number;
+}
+
+export interface FakeOptions {
+  /**
+   * Which method to claim on `Generated.method`.
+   *
+   * A fake cannot *be* constrained — it returns whatever the script says — so
+   * this is a label, and labelling it honestly matters: a test asserting "the
+   * prompted path is exercised" must not be satisfied by a fake that always says
+   * `constrained`. Scripts are still validated against the real schema either
+   * way, which is the part that actually catches drift.
+   */
+  readonly method?: GenerationMethod;
 }
 
 export interface FakeStructuredGenerator extends StructuredGenerator {
@@ -50,7 +65,11 @@ export interface FakeStructuredGenerator extends StructuredGenerator {
 /** Rough proxy: ~4 characters per token. Wrong in absolute terms, useful for comparison. */
 const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
 
-export function fakeStructuredGenerator(script: FakeScript = {}): FakeStructuredGenerator {
+export function fakeStructuredGenerator(
+  script: FakeScript = {},
+  options: FakeOptions = {},
+): FakeStructuredGenerator {
+  const method = options.method ?? 'constrained';
   const queues = new Map<Operation, unknown[]>(
     Object.entries(script).map(([operation, values]) => [
       operation as Operation,
@@ -63,13 +82,15 @@ export function fakeStructuredGenerator(script: FakeScript = {}): FakeStructured
   return {
     calls,
 
-    async generate<T>(schema: z.ZodType<T>, request: GenerationRequest): Promise<Generated<T>> {
+    async generate<T>(elicitation: Elicitation<T>): Promise<Generated<T>> {
+      const request = elicitation;
       calls.push({
         operation: request.operation,
         instructions: request.instructions,
         input: request.input,
         effort: request.effort,
         maxOutputTokens: request.maxOutputTokens,
+        examples: request.examples?.length ?? 0,
       });
 
       const queue = queues.get(request.operation);
@@ -82,7 +103,7 @@ export function fakeStructuredGenerator(script: FakeScript = {}): FakeStructured
       }
 
       const scripted = queue.shift();
-      const parsed = schema.safeParse(scripted);
+      const parsed = elicitation.schema.safeParse(scripted);
       if (!parsed.success) {
         // `retryable: true` is the contract `withValidationRetry` keys on. The
         // fake reports schema disagreement exactly as a real provider does, so
@@ -121,7 +142,7 @@ export function fakeStructuredGenerator(script: FakeScript = {}): FakeStructured
       });
       usages.push(usage);
 
-      return { value: parsed.data, usage };
+      return { value: parsed.data, usage, method, raw: null, repairs: [] };
     },
 
     callsFor(operation: Operation): readonly RecordedCall[] {

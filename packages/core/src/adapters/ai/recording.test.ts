@@ -10,6 +10,7 @@ import { recordingStructuredGenerator } from './recording.ts';
 const MODEL = 'test-model-1';
 const Shape = z.object({ value: z.string().min(1) });
 const request = (input = 'hello') => ({
+  schema: Shape,
   operation: OPERATION.assess,
   instructions: 'be useful',
   input,
@@ -32,8 +33,8 @@ describe('recordingStructuredGenerator', () => {
     const fake = fakeStructuredGenerator({ assess: [{ value: 'from the model' }] });
     const generator = recordingStructuredGenerator(fake, { cassetteDir, model: MODEL });
 
-    const recorded = await generator.generate(Shape, request());
-    const replayed = await generator.generate(Shape, request());
+    const recorded = await generator.generate(request());
+    const replayed = await generator.generate(request());
 
     expect(replayed.value).toEqual(recorded.value);
     // One script entry, two calls: the second never reached the inner generator.
@@ -51,13 +52,12 @@ describe('recordingStructuredGenerator', () => {
     const better = fakeStructuredGenerator({ assess: [{ value: 'from the better model' }] });
 
     await recordingStructuredGenerator(cheap, { cassetteDir, model: 'cheap-1' }).generate(
-      Shape,
       request(),
     );
     const second = await recordingStructuredGenerator(better, {
       cassetteDir,
       model: 'better-1',
-    }).generate(Shape, request());
+    }).generate(request());
 
     expect(second.value).toEqual({ value: 'from the better model' });
     // It actually called through rather than hitting the other model's cassette.
@@ -69,8 +69,8 @@ describe('recordingStructuredGenerator', () => {
     const fake = fakeStructuredGenerator({ assess: [{ value: 'x' }] });
     const generator = recordingStructuredGenerator(fake, { cassetteDir, model: MODEL });
 
-    const recorded = await generator.generate(Shape, request());
-    const replayed = await generator.generate(Shape, request());
+    const recorded = await generator.generate(request());
+    const replayed = await generator.generate(request());
 
     expect(replayed.usage).toEqual(recorded.usage);
     expect(replayed.usage.operation).toBe('assess');
@@ -83,8 +83,8 @@ describe('recordingStructuredGenerator', () => {
     const fake = fakeStructuredGenerator({ assess: [{ value: 'a' }, { value: 'b' }] });
     const generator = recordingStructuredGenerator(fake, { cassetteDir, model: MODEL });
 
-    await generator.generate(Shape, request('first'));
-    await generator.generate(Shape, request('second'));
+    await generator.generate(request('first'));
+    await generator.generate(request('second'));
 
     expect(fake.calls).toHaveLength(2);
   });
@@ -98,36 +98,30 @@ describe('recordingStructuredGenerator', () => {
       mode: 'replay',
     });
 
-    await expect(generator.generate(Shape, request())).rejects.toThrow(CapabilityError);
+    await expect(generator.generate(request())).rejects.toThrow(CapabilityError);
     expect(fake.calls).toHaveLength(0);
   });
 
   it('re-validates a replayed cassette against the current schema', async () => {
     const cassetteDir = await scratch();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'x' }] });
-    await recordingStructuredGenerator(fake, { cassetteDir, model: MODEL }).generate(
-      Shape,
-      request(),
-    );
+    await recordingStructuredGenerator(fake, { cassetteDir, model: MODEL }).generate(request());
 
     // A schema that has since gained a field. The stale cassette must fail here
     // rather than flow through as though it were current.
     const Tightened = Shape.extend({ addedLater: z.string() });
     await expect(
-      recordingStructuredGenerator(fake, { cassetteDir, model: MODEL, mode: 'replay' }).generate(
-        Tightened,
-        request(),
-      ),
+      recordingStructuredGenerator(fake, { cassetteDir, model: MODEL, mode: 'replay' }).generate({
+        ...request(),
+        schema: Tightened,
+      }),
     ).rejects.toThrow();
   });
 
   it('writes a human-readable cassette, since these are reviewed in diffs', async () => {
     const cassetteDir = await scratch();
     const fake = fakeStructuredGenerator({ assess: [{ value: 'x' }] });
-    await recordingStructuredGenerator(fake, { cassetteDir, model: MODEL }).generate(
-      Shape,
-      request(),
-    );
+    await recordingStructuredGenerator(fake, { cassetteDir, model: MODEL }).generate(request());
 
     const files = await import('node:fs/promises').then((fs) => fs.readdir(cassetteDir));
     expect(files[0]).toMatch(/^assess-[0-9a-f]{16}\.json$/);

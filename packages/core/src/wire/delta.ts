@@ -149,3 +149,47 @@ export const emptyWireDelta = (): WireDelta => ({
   product: { name: ABSENT, oneLiner: ABSENT, problem: ABSENT, purpose: ABSENT, users: [] },
   ops: [],
 });
+
+/**
+ * One worked example of a delta, for `prompted` generation.
+ *
+ * Small on purpose: it shows the two operations a model gets wrong most often —
+ * an `add` (where `id` is empty and ids are assigned) and a `promote` (where
+ * `id` names the item being settled, not the decision being created) — and
+ * nothing else. An example that demonstrated all four ops would cost four times
+ * the tokens to teach the same grammar.
+ *
+ * A test parses it against `UnderstandingDeltaCodec`, so an example that drifts
+ * from the schema fails CI instead of quietly teaching a model the wrong shape.
+ */
+export const DELTA_EXAMPLE: WireDelta = {
+  product: {
+    name: 'Acme Scheduler',
+    oneLiner: 'Book rooms without arguing in Slack',
+    problem: ABSENT,
+    purpose: ABSENT,
+    users: [],
+  },
+  ops: [
+    {
+      ...emptyOp(),
+      op: 'add',
+      target: 'requirement',
+      statement: 'Users can see which rooms are free right now',
+      kind: 'functional',
+      dimension: 'core-behaviour',
+      blocking: 'no',
+      provenance: [{ sourceId: 'src-1', quote: 'I just want to see what is free', note: ABSENT }],
+    },
+    {
+      ...emptyOp(),
+      op: 'promote',
+      target: 'decision',
+      id: 'req-4',
+      statement: 'Availability is read from Google Calendar, not entered by hand',
+      kind: 'functional',
+      dimension: 'integrations',
+      rationale: 'Chosen over manual entry, which the team said nobody would keep up to date.',
+    },
+  ],
+};

@@ -185,6 +185,53 @@ weakening the domain.
 expressible (`retire` + `add` is the escape hatch); and `users: []` likewise
 means unchanged, so clearing every user group is not expressible.
 
+### The adapter chooses how to ask, per request (Phase 8)
+
+**`StructuredGenerator` no longer assumes a provider can take a schema.** It used
+to be `generate(schema, request)`, which quietly required a structured-output
+feature — an abstraction that only abstracts over vendors that already agree.
+Now it is `generate(elicitation)`, where the elicitation carries the schema and
+its examples as one contract, and the adapter decides how to render it.
+
+Three methods, ordered by the guarantee each gives up:
+
+| Method | Guarantee | Cost |
+| --- | --- | --- |
+| `constrained` | malformed output is *unrepresentable* | hard caps on schema branchiness |
+| `tool` | none — conformance moves to us | no size limit; some providers forbid thinking here |
+| `prompted` | none | assumes only "can produce text" |
+
+**Method choice is a pure function of a measurement and a table of caps.** No
+library does this: Instructor, BAML and the AI SDK all take the mode as global
+configuration, and a schema that turns out too branchy fails at request time.
+That is a fine default when schemas are uniform and a bad one here, where
+`analyze` and `assess` differ by an order of magnitude. `chooseMethod(budget,
+caps, prefersThinking)` is testable with no key, and every choice carries the
+`reason` that produced it.
+
+**The one case where the ladder is not simply ordered by guarantee** is a
+high-effort call on a provider whose tool mode forbids thinking. Anthropic's
+`jsonTool` forces `tool_choice`, and forced tool use rejects extended thinking —
+so dropping to `tool` on `analyze` would trade away the deliberation that made it
+high-effort. `chooseMethod` prefers `prompted` there. `effort` reaches the
+decision as a boolean, so no vendor vocabulary enters the pure function.
+
+**Repair is a ladder, not a flag**, and every rung reports what it did:
+extract the JSON from prose or a code fence → strip trailing commas → unwrap a
+single-key envelope. Rungs are deliberately conservative. **Truncation is not
+repaired**: appending the missing closers turns a cut-off list of requirements
+into a shorter list that looks complete, and a shorter list is indistinguishable
+from a correct one downstream. A retry is the honest outcome.
+
+`Generated<T>` gained `method`, `raw` and `repairs`. `raw` is populated on the
+prompted path and `null` on the other two — re-serializing a parsed object and
+calling it "raw" would be a plausible lie in exactly the place a later reader
+would trust it. Without `repairs`, "prompted mode works fine" is unfalsifiable.
+
+**Examples are only sent on `prompted`.** It is the method with no structural
+guarantee, so a worked example is doing the job a grammar would otherwise do;
+paying tokens for one under a decoder is spending to restate a certainty.
+
 ---
 
 ## Storage

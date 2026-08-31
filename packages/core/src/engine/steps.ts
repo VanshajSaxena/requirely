@@ -10,7 +10,7 @@ import {
   UnderstandingAssessment,
   type UnderstandingDelta,
 } from '../domain/index.ts';
-import { UnderstandingDeltaCodec } from '../wire/index.ts';
+import { DELTA_EXAMPLE, UnderstandingDeltaCodec } from '../wire/index.ts';
 import {
   type AnalyzeContext,
   buildAnalyzeInput,
@@ -96,10 +96,16 @@ export async function analyze(
   deps: StepDeps,
   context: AnalyzeContext,
 ): Promise<Generated<UnderstandingDelta>> {
-  return deps.generator.generate(UnderstandingDeltaCodec, {
+  return deps.generator.generate({
     operation: OPERATION.analyze,
     instructions: ANALYZE_INSTRUCTIONS,
     input: buildAnalyzeInput(context),
+    schema: UnderstandingDeltaCodec,
+    // Read only by `prompted` generation, which has no structural guarantee to
+    // fall back on. The delta is the one schema where a worked example does real
+    // work: sixteen always-present fields per op are obvious in an example and
+    // laborious in prose.
+    examples: [DELTA_EXAMPLE],
     effort: EFFORT.analyze,
     maxOutputTokens: MAX_OUTPUT_TOKENS.analyze,
   });
@@ -109,10 +115,11 @@ export async function assess(
   deps: StepDeps,
   understanding: Understanding,
 ): Promise<Generated<UnderstandingAssessment>> {
-  return deps.generator.generate(UnderstandingAssessment, {
+  return deps.generator.generate({
     operation: OPERATION.assess,
     instructions: ASSESS_INSTRUCTIONS,
     input: buildAssessInput(understanding),
+    schema: UnderstandingAssessment,
     effort: EFFORT.assess,
     maxOutputTokens: MAX_OUTPUT_TOKENS.assess,
   });
@@ -136,7 +143,9 @@ export async function analyzeAndAssess(
   deps: StepDeps,
   context: AnalyzeContext,
 ): Promise<Generated<AnalyzeAndAssessResult>> {
-  return deps.generator.generate(AnalyzeAndAssessResult, {
+  return deps.generator.generate({
+    schema: AnalyzeAndAssessResult,
+    examples: [{ delta: DELTA_EXAMPLE, assessment: ASSESSMENT_EXAMPLE }],
     operation: OPERATION.analyzeAndAssess,
     instructions: `${ANALYZE_INSTRUCTIONS}\n\n---\n\n${ASSESS_INSTRUCTIONS}\n\nAssess the understanding as it will be AFTER your delta is applied.`,
     input: buildAnalyzeInput(context),
@@ -147,18 +156,36 @@ export async function analyzeAndAssess(
 
 const QuestionDrafts = z.object({ questions: z.array(QuestionDraftSchema) });
 
+/**
+ * A minimal, valid assessment, for the merged operation's prompted rendering.
+ *
+ * Two dimensions rather than all eight: an example teaches the *shape*, and
+ * paying for six more rows of the same shape is paying to restate it.
+ */
+const ASSESSMENT_EXAMPLE = {
+  summary: 'Purpose is clear; acceptance criteria are not.',
+  blockingItemIds: [],
+  coverage: [
+    { dimension: 'purpose', score: 0.9, rationale: 'The brief states the goal directly.' },
+    { dimension: 'acceptance', score: 0.2, rationale: 'Nothing states how success is measured.' },
+  ],
+};
+
 export async function generateQuestions(
   deps: StepDeps,
   understanding: Understanding,
   verdict: SufficiencyVerdict,
   maxQuestions: number,
 ): Promise<Generated<readonly QuestionDraft[]>> {
-  const result = await deps.generator.generate(QuestionDrafts, {
+  const result = await deps.generator.generate({
     operation: OPERATION.generateQuestions,
     instructions: QUESTIONS_INSTRUCTIONS,
     input: buildQuestionsInput(understanding, verdict, maxQuestions),
+    schema: QuestionDrafts,
     effort: EFFORT.questions,
     maxOutputTokens: MAX_OUTPUT_TOKENS.questions,
   });
-  return { value: result.value.questions, usage: result.usage };
+  // Unwrapping the envelope loses nothing: `method`, `raw` and `repairs` travel
+  // with the call, not with the value inside it.
+  return { ...result, value: result.value.questions };
 }

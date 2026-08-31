@@ -1,8 +1,7 @@
-import type { z } from 'zod';
 import {
   CapabilityError,
+  type Elicitation,
   type Generated,
-  type GenerationRequest,
   type StructuredGenerator,
   sumUsage,
   Usage,
@@ -37,6 +36,13 @@ import { type Logger, silentLogger } from '../../observability/logger.ts';
  *
  * Only *validation* failures retry. A missing API key or a 401 is not going to
  * succeed on the second try; retrying it just spends the user's money slower.
+ *
+ * **One reask shape serves all three generation methods**, which is why this
+ * stayed a single decorator rather than splitting per method: appending the
+ * failure to `input` works whether the schema went as a grammar, as a tool, or
+ * as prose, because in every case `input` is what the model reads last. The
+ * method-specific work — rendering the contract, extracting JSON, repairing it —
+ * happens below this layer and is already exhausted by the time a call fails.
  */
 
 export interface RetryOptions {
@@ -67,7 +73,7 @@ export function withValidationRetry(
   const logger = options.logger ?? silentLogger;
 
   return {
-    async generate<T>(schema: z.ZodType<T>, request: GenerationRequest): Promise<Generated<T>> {
+    async generate<T>(request: Elicitation<T>): Promise<Generated<T>> {
       let lastReason = 'unknown';
       // A failed attempt is billed like any other. Collecting it here is the
       // difference between reporting what a recovered call cost and reporting
@@ -75,17 +81,19 @@ export function withValidationRetry(
       const wasted: Usage[] = [];
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        const augmented: GenerationRequest =
+        const augmented: Elicitation<T> =
           attempt === 1
             ? request
             : { ...request, input: `${request.input}${correctionNotice(lastReason, attempt - 1)}` };
 
         try {
-          const result = await inner.generate(schema, augmented);
+          const result = await inner.generate(augmented);
           if (attempt > 1) {
             logger.info('structured generation recovered after retry', {
               operation: request.operation,
               attempts: attempt,
+              method: result.method,
+              repairs: result.repairs.length,
               wastedTokens: sumUsage(wasted).inputTokens + sumUsage(wasted).outputTokens,
             });
           }

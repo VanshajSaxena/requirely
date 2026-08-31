@@ -34,6 +34,20 @@ windowing, summarization, or retrieval through the (defined, unimplemented)
 "connection died" without inspecting vendor fields — a small version of the leak
 the architecture otherwise forbids. Wants a `ConflictError` mapped in the adapter.
 
+**OpenAI's grammar caps are guessed, not measured.** `OPENAI_CAPS` in
+`adapters/ai/openai.ts` is set to 20 / 12 — deliberately below Anthropic's 24 / 16,
+because OpenAI's structured outputs are documented as accepting less
+([JSONSchemaBench] measured them compiling 6–13% of hard schemas against ~60% for
+the best open engine). The direction of the error is safe: too-low caps degrade
+to `tool` early rather than 400ing late. But they are unverified — the probe that
+would settle them is blocked on the org API spend limit.
+
+**`prompted` generation has never run against a real model.** It is covered by
+unit tests and a mock model, which prove the wiring and the repair ladder. What
+they cannot prove is the thing that matters: whether a real model, handed a JSON
+Schema in prose, produces something the ladder can recover. Step 6's evals are
+where that gets a number.
+
 **A replay never exercises the provider adapter.** Cassettes record at the *port*,
 so `recording.ts` replays a stored value and never calls `generateObject`. Request
 building, usage mapping and error translation are covered separately by
@@ -137,6 +151,19 @@ thing that gets rediscovered painfully.
   gets switched off.
 - **Zod `.default()` does not parse its argument** (see DECISIONS.md), and
   `.partial()` does not strip defaults. Both are silent data bugs.
+- **A balanced brace span is not necessarily JSON.** `extractJson` first returned
+  the first balanced `{…}`, which is `{curly}` in the sentence "use {curly}
+  braces". Candidates must actually parse, and the longest parsing one wins —
+  prose can contain `{}`, which parses fine and is never the answer.
+- **A catch-all `translate()` can eat your own errors.** The vercel adapter wraps
+  everything thrown inside `generate` so no vendor type escapes — including the
+  `CapabilityError` its own prompted path throws, whose `retryable: true` was
+  silently downgraded. Any error-translation boundary needs a pass-through for
+  errors that are already translated.
+- **`codec.parse(domainValue)` fails.** A codec's `.parse` expects the *wire*
+  shape, so anything that stores a generated value and re-validates it later —
+  cassettes, a cache, a queue — must use `schema.out`, which `ZodCodec` exposes.
+  Verified in both directions.
 - **`Set.add()` returns the Set, not a boolean.** `!seen.add(id)` is always false;
   a duplicate check written that way never fires.
 - **Zod brands *intersect*, which makes id subtyping expressible.**
