@@ -124,6 +124,67 @@ number, not editing a prompt and re-evaluating everything.
 must never manufacture sufficiency — that is the difference between a finished
 spec and one with stated unknowns.
 
+### The wire is a separate shape from the domain (Phase 8)
+
+**`src/wire/` sits between the domain and every model, and the domain never
+crosses it.** Providers compile a strict JSON Schema into a decoding grammar and
+cap its branchiness — Anthropic at 24 optional properties and 16 union-typed
+ones, *per request*. `UnderstandingDelta` is assembled out of domain schemas, so
+every `.default()`, `.nullable()` and `.optional()` became a branch: 84 and 34.
+Shrinking the domain to fit a vendor's compiler would be letting the wire dictate
+the model.
+
+Three choices, each measured:
+
+| Shape | optional | union | size |
+| --- | ---: | ---: | ---: |
+| `UnderstandingDelta` (domain) | 84 | 34 | 9.9 KB |
+| `UnderstandingDeltaCodec` (wire) | **0** | **0** | **1.9 KB** |
+
+- **One flat op list, not six nested collections.** Intent is an explicit `op`
+  field, never field presence. mem0, Graphiti and Letta converged on this
+  independently; the measurable reason is that six `{add,revise,retire}` objects
+  are six nested branch points and one array is one.
+- **Sentinel encoding: every field required, `''` or `[]` means absent.** The
+  reflex fix — required plus nullable — trades an optional for a union and lands
+  in the *tighter* budget. Removing the branch entirely costs nothing. For enums
+  the trick is `''` as a **member** of the enum, not a union with a literal:
+  `z.enum(['','low'])` is one `enum` keyword, `z.enum(['low']).nullable()` is an
+  `anyOf`. That single distinction is why the union count is zero rather than 4.
+  It is only unambiguous because every field it touches is `.min(1)` in the
+  domain, so `''` cannot be a real value.
+- **One `z.codec`, not four hand-synced artifacts.** It yields the wire JSON
+  Schema (`io: 'input'`), the domain type (`io: 'output'`), a total `decode`, and
+  an `encode` used only by a property test — `decode(encode(x)) ≡ x` makes
+  "someone added a domain field the wire has no home for" a CI failure.
+
+**No adapter changed.** `@ai-sdk/provider-utils` already converts with
+`toJSONSchema(schema, { target: 'draft-7', io: 'input' })` and validates with
+`safeParseAsync` returning `result.data` — so a codec emits the wire schema and
+returns a decoded domain value with no plumbing. Verified by reading
+`dist/index.js` at v5.0.29. It also wraps every conversion in
+`addAdditionalPropertiesToJsonSchema`, which closes a real Zod trap: the
+`io: 'input'` projection **silently omits** `additionalProperties: false`, and
+strict mode requires it. Anything bypassing the SDK must reimplement that.
+
+**Decode failures are retryable, not fatal.** `ctx.issues.push(...)` inside the
+codec produces an ordinary `ZodError`, which `withValidationRetry` already
+re-asks on. Issues are reported at **wire paths** (`ops[3].kind`) rather than
+domain paths, because a reask has to name something in the schema the model was
+actually given.
+
+**What this bought back.** `analyze` had been forced into Anthropic's `jsonTool`
+mode to escape the cap, and forced tool use forbids extended thinking — so
+`effort: 'high'` was unreachable on exactly the call that wanted it most. Every
+operation is now inside both caps, so that fallback no longer fires. The
+constraint was resolved by changing what the model is *asked for*, not by
+weakening the domain.
+
+**Two limitations, pinned by tests rather than discovered later.** `''` means
+"leave unchanged" on a revise, so clearing a nullable field back to `null` is not
+expressible (`retire` + `add` is the escape hatch); and `users: []` likewise
+means unchanged, so clearing every user group is not expressible.
+
 ---
 
 ## Storage

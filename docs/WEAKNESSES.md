@@ -89,16 +89,24 @@ upgrade if it becomes a nuisance.
 user settled this?" answerable when it arrives — that is the whole reason
 `settledBy: 'user'` was rejected during the Phase 8 design.
 
-**The domain delta is not sendable, and got further from it in Phase 8 Step 1.**
-Measured after the reshape: `UnderstandingDelta` at `io: 'input'` is **84 optional
-/ 34 union / 9.9 KB**, against Anthropic caps of 24 and 16 — worse than the 71/28
-that started the investigation, because `dimension`, `blocking` and the decisions
-ops all add fields. This is expected and not a regression: Step 1 fixes the
-*model*, Step 2 introduces `src/wire/` and a codec so the model never sees a
-domain schema at all. Recorded because "the numbers went up" is exactly the sort
-of thing that reads as failure without the sentence explaining why it isn't.
-For contrast, `Understanding` at `io: 'output'` is **0 optional / 20 union** — the
-"nullable, not optional" convention survived the reshape intact.
+~~**The domain delta is not sendable.**~~ **Closed in Phase 8 Step 2.** The
+domain delta is still 84 optional / 34 union / 9.9 KB and still not sendable —
+deliberately — but nothing sends it any more. `src/wire/` measures 0 / 0 / 1.9 KB
+and every operation is inside the caps. See DECISIONS.md.
+
+**The wire's loose `WireItem` moves validation risk into the codec.** `WireOp` is
+a superset — an assumption's `basis` and a constraint's `category` sit side by
+side — so `decode` is what narrows it per target. If `decode` is wrong, wrongly
+shaped data reaches the domain. Two mitigations, both real: the domain schema is
+still the final gate and re-parses everything, and `decode` is pure with 24 tests
+on it. Watch this if the wire grows a target.
+
+**`decode` reports at wire paths, but the domain's own errors do not.** A failure
+`decode` catches says `ops[3].kind`, which a model can act on. A failure that gets
+past it into `UnderstandingDelta.parse` says `requirements.add.0.kind` — a path in
+a schema the model never saw. The reask is still useful (the message names the
+field) but it is not as good, so per-kind checks belong in `decode` rather than
+being left to the domain.
 
 **The live-cassette guard answers "was anything recorded?", not "is it still
 valid?"** A cassette key hashes `(operation, instructions, input)`, so changing a

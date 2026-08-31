@@ -6,6 +6,7 @@ import {
   type Question,
 } from '../domain/index.ts';
 import type { StrategyName } from '../engine/strategies.ts';
+import { emptyOp, emptyWireDelta, type WireDelta, type WireOp } from '../wire/index.ts';
 
 /**
  * One scripted two-turn session, shared by every integration test.
@@ -22,7 +23,22 @@ import type { StrategyName } from '../engine/strategies.ts';
  * items and asks about them; turn 2 promotes them to decisions using answers.
  * A scenario that only ever added things would pass every test while never
  * exercising the one transition the product exists to make.
+ *
+ * **The deltas are written in the wire format, not the domain one**, because
+ * that is what a model emits. The fake generator validates every scripted value
+ * against the schema the engine actually requested — which is now the codec — so
+ * these fixtures exercise `decode` on every integration run rather than leaving
+ * it covered only by its own unit tests.
  */
+
+/** Builds a wire delta from partial ops, so a fixture states only what it means. */
+const delta = (
+  ops: readonly Partial<WireOp>[],
+  product: Partial<WireDelta['product']> = {},
+): WireDelta => ({
+  product: { ...emptyWireDelta().product, ...product },
+  ops: ops.map((op) => ({ ...emptyOp(), ...op })),
+});
 
 export const AT = '2026-01-01T00:00:00.000Z';
 
@@ -36,27 +52,33 @@ export const coverage = (
     rationale: `${dimension}: scripted`,
   }));
 
-export const TURN_1_DELTA = {
-  product: { name: 'Requirely', purpose: 'Gather software requirements faster' },
-  requirements: {
-    add: [
-      {
-        statement: 'Ingest audio, text and documents into one understanding',
-        kind: 'functional',
-        dimension: 'core-behaviour',
-        provenance: [{ sourceId: 'src-1', quote: 'dump everything you know' }],
-      },
-      {
-        statement: 'Produce something an engineer can act on',
-        kind: 'acceptance',
-        dimension: 'acceptance',
-      },
-    ],
-  },
-  constraints: {
-    add: [{ statement: 'Serve product managers first', category: 'product', dimension: 'users' }],
-  },
-};
+export const TURN_1_DELTA = delta(
+  [
+    {
+      op: 'add',
+      target: 'requirement',
+      statement: 'Ingest audio, text and documents into one understanding',
+      kind: 'functional',
+      dimension: 'core-behaviour',
+      provenance: [{ sourceId: 'src-1', quote: 'dump everything you know', note: '' }],
+    },
+    {
+      op: 'add',
+      target: 'requirement',
+      statement: 'Produce something an engineer can act on',
+      kind: 'acceptance',
+      dimension: 'acceptance',
+    },
+    {
+      op: 'add',
+      target: 'constraint',
+      statement: 'Serve product managers first',
+      category: 'product',
+      dimension: 'users',
+    },
+  ],
+  { name: 'Requirely', purpose: 'Gather software requirements faster' },
+);
 
 export const TURN_1_ASSESSMENT = {
   summary: 'Purpose is clear; audience and acceptance are not.',
@@ -93,27 +115,27 @@ export const TURN_1_QUESTIONS = {
  * `Question.about`, so a fixture that spelled out an `AnswerId` would be testing
  * a path production never takes.
  */
-export const TURN_2_DELTA = {
-  decisions: {
-    promote: [
-      {
-        from: 'req-2',
-        statement: 'Success is a specification an engineer can build from unaided',
-        kind: 'acceptance',
-        dimension: 'acceptance',
-        rationale:
-          'Chosen over "fewer clarification rounds", which measures the process not the output.',
-      },
-      {
-        from: 'con-1',
-        statement: 'Product managers and founders are the primary users',
-        kind: 'scope',
-        dimension: 'users',
-        rationale: 'Both were selected; engineers were offered and not chosen.',
-      },
-    ],
+export const TURN_2_DELTA = delta([
+  {
+    op: 'promote',
+    target: 'decision',
+    id: 'req-2',
+    statement: 'Success is a specification an engineer can build from unaided',
+    kind: 'acceptance',
+    dimension: 'acceptance',
+    rationale:
+      'Chosen over "fewer clarification rounds", which measures the process not the output.',
   },
-};
+  {
+    op: 'promote',
+    target: 'decision',
+    id: 'con-1',
+    statement: 'Product managers and founders are the primary users',
+    kind: 'scope',
+    dimension: 'users',
+    rationale: 'Both were selected; engineers were offered and not chosen.',
+  },
+]);
 
 export const TURN_2_ASSESSMENT = {
   summary: 'Everything required is now covered.',

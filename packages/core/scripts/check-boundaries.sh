@@ -12,6 +12,12 @@
 #      (Transcriber). An explicit list, so adding a third is a reviewable diff
 #      rather than a rule quietly widened until it stopped complaining.
 #   5. Time, identity and randomness enter only via the Clock and IdGenerator ports.
+#   6. wire/ may depend on domain/ and nothing else, and nothing in domain/ may
+#      depend on wire/. The wire exists because *grammar compilers* have limits —
+#      a fact about every provider, not about one — so a provider concern reaching
+#      into it would turn a general encoding into a vendor workaround, and a
+#      domain file reaching back into it would put the vendor's constraint inside
+#      the model the constraint exists to protect.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,8 +25,8 @@ fail=0
 
 # find_imports is silent on a missing directory — correct for src/app, which does
 # not exist yet, but it means a wrong cwd yields "passed" while checking nothing.
-[ -d src/domain ] && [ -d src/engine ] || {
-  printf 'Boundary check aborted: no src/domain and src/engine under %s\n' "$PWD" >&2
+[ -d src/domain ] && [ -d src/engine ] && [ -d src/wire ] || {
+  printf 'Boundary check aborted: no src/domain, src/engine and src/wire under %s\n' "$PWD" >&2
   exit 1
 }
 
@@ -75,9 +81,22 @@ report "domain/ test files may only add vitest" \
 report "engine/ must not import adapters or app" \
   "$(find_imports src/engine '((\.\./)+|@requirely/core/)(adapters|app)(/.*)?')"
 
+# Rule 6, both directions. `engine/` may reach into `wire/` — it is what chooses
+# a schema per operation — but nothing else may, and `wire/` may reach only
+# `domain/`.
+report "wire/ may only depend on domain/" \
+  "$(find_imports src/wire '((\.\./)+|@requirely/core/)(engine|adapters|app|ingestion|projection|config|integration)(/.*)?')"
+
+report "wire/ may only depend on zod among third-party packages" \
+  "$(find_imports src/wire '[^.#].*' |
+      grep -vE ': (zod(/.*)?|node:.*|vitest)$' || true)"
+
+report "domain/ must not depend on wire/" \
+  "$(find_imports src/domain '((\.\./)+|@requirely/core/)wire(/.*)?')"
+
 # Rule 4 is the provider-agnostic constraint as an executable assertion.
 ai_leaks=""
-for dir in src/domain src/engine src/ingestion src/projection src/app src/config src/integration; do
+for dir in src/domain src/engine src/wire src/ingestion src/projection src/app src/config src/integration; do
   ai_leaks+="$(find_imports "$dir" '(ai|@ai-sdk/.*)')"$'\n'
 done
 for dir in src/adapters/*/; do
@@ -90,7 +109,7 @@ report "\`ai\`/\`@ai-sdk/*\` may only be imported under an AI-vendor adapter dir
 # Rule 5: determinism. Without it, replayable snapshot tests of the loop decay
 # one convenient call at a time.
 nondeterminism=""
-for dir in src/domain src/engine; do
+for dir in src/domain src/engine src/wire; do
   nondeterminism+="$(find_in_code "$dir" \
     '(Date\.now\(|new Date\(|crypto\.randomUUID\(|Math\.random\()')"$'\n'
 done

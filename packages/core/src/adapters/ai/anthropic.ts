@@ -22,54 +22,49 @@ import { vercelStructuredGenerator } from './vercel.ts';
  */
 
 /**
- * Two Anthropic limits collide with this domain, and the collision decides how
- * each request is sent. Both were found by live calls that failed and therefore
- * cost nothing.
+ * Two Anthropic limits collide with structured output, and the collision used to
+ * decide how every request was sent. Both were found by live calls that failed
+ * and therefore cost nothing.
  *
  * **1. Constrained decoding caps optional properties at 24.** Anthropic compiles
- * the JSON Schema into a decoding grammar, and refuses one this branchy:
+ * the JSON Schema into a decoding grammar and refuses one this branchy:
  *
  * > Schemas contains too many optional parameters (71), which would make grammar
  * > compilation inefficient. […] (limit: 24).
  *
- * That is not schema sloppiness, which is why the fix lives here and not in the
- * domain. Counted on `UnderstandingDelta`: 6 optionals at the root (a delta
- * touching only requirements must omit the other five collections), 16 more for
- * each collection's `add`/`revise`/`remove`/`resolve`, and ~20 inside
- * `revise.items` — where **every field is optional by contract**, because
- * `patchOf()` exists precisely so that "unmentioned means unchanged". Reaching
- * 24 would mean deleting `revise`: an amputation of partial updates, not a
- * simplification.
- *
  * **2. Forced tool use forbids thinking.** The escape from (1) is `jsonTool`
- * mode, which sends the schema as an ordinary non-strict tool — no grammar, no
- * limit. But it also forces `tool_choice`, and then:
+ * mode — the schema goes as an ordinary non-strict tool, no grammar, no limit —
+ * but it forces `tool_choice`, and then:
  *
  * > Thinking may not be enabled when tool_choice forces tool use.
  *
- * ## So the mode is chosen per request, not per provider
+ * ## What changed, and why this code stayed
  *
- * | Schema | Optionals | Mode | Thinking |
- * | --- | --- | --- | --- |
- * | `analyze`, `analyze-and-assess` | 71, 72 | `jsonTool` | **off** |
- * | `assess`, `generate-questions` | 1, 4 | `outputFormat` | on, `effort` honoured |
+ * The fix is not here. `src/wire/` now sits between the domain and every model:
+ * a flat, sentinel-encoded op list that measures **0 optional / 0 union / 1.9 KB**
+ * where the domain delta measures 84 / 34 / 9.9 KB. Every operation is now well
+ * inside both caps:
  *
- * A uniform choice would have been simpler and strictly worse: sending
- * everything through `jsonTool` would disable thinking on the two calls where it
- * costs nothing to keep.
+ * | Schema | optional | union |
+ * | --- | ---: | ---: |
+ * | `analyze` (wire codec) | 0 | 0 |
+ * | `analyze-and-assess` | 1 | 0 |
+ * | `assess` | 1 | 0 |
+ * | `generate-questions` | 5 | 3 |
  *
- * **The honest part: this disables thinking on `analyze`, which is the call that
- * wanted it most** — `EFFORT.analyze` is `high` precisely because
- * contradiction-detection across sources is the hardest thing the engine asks
- * for. `effort` still reaches the vendor for the other two operations, so the
- * domain concept is not dead, but it is now unreachable exactly where it
- * mattered. Revisit if a future model raises the grammar limit above 71, or if
- * the delta shape ever shrinks.
+ * **So `jsonTool` no longer fires, and the thing it cost has come back.** The
+ * previous version of this comment recorded the honest damage: *"this disables
+ * thinking on `analyze`, which is the call that wanted it most"* — `EFFORT.analyze`
+ * is `high` precisely because contradiction detection across sources is the
+ * hardest thing the engine asks for. That is repaired, and it was repaired by
+ * changing what the model is *asked for* rather than by weakening the domain.
  *
- * The trade also shifts schema conformance from the provider to us: `jsonTool`
- * output is not *guaranteed* to match. That is what `withValidationRetry` was
- * built for, and the live harness reports the retry rate, so the cost of this
- * decision is measured rather than assumed.
+ * The check below stays anyway, as a graceful degradation rather than a
+ * workaround. A future field could push `generate-questions` over the line, and
+ * the difference between "the mode switches and thinking turns off" and "the
+ * request 400s" is the difference between a slower turn and a lost one.
+ * `src/wire/codec.test.ts` asserts the cap at CI time, so this should now be
+ * unreachable — if it ever fires in production, that test has a gap.
  */
 
 /** Anthropic's documented ceiling for grammar-compiled schemas. */

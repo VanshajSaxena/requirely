@@ -10,13 +10,14 @@ provider-agnostic constraint. This file covers only what is true inside this pac
 ## Status
 
 Phases 0–6 are done, plus Phase 7 steps 0–1 (adapter fixes, cost accounting, the
-live harness and the first real model call) and **Phase 8 step 1** (the domain
-reshape: a settled `Decision` tier, promotion, and `Gap` deleted).
+live harness and the first real model call) and **Phase 8 steps 1–2** (the domain
+reshape — a settled `Decision` tier, promotion, `Gap` deleted — and `src/wire/`,
+the sentinel-encoded flat op list the model actually sees).
 
 **Phase 7 is parked mid-flight.** The first live calls found that providers
 compile strict schemas into decoding grammars and cap their branchiness, and ours
-was 3× over. Phase 8 is that redesign; steps 2–6 (wire+codec, adapters, engine,
-projections, evals) are next, and Phase 7 steps 2–4 resume after.
+was 3× over. Phase 8 is that redesign; steps 3–6 (adapters, engine, projections,
+evals) are next, and Phase 7 steps 2–4 resume after.
 
 **Live cassettes are currently absent** — the Phase 7 recordings were orphaned by
 the Phase 8 schema change and re-recording is blocked on the org API spend limit.
@@ -97,6 +98,42 @@ Load-bearing details:
 - **The fake adapter validates scripted responses against the real schema.** A fixture that drifts fails exactly as a bad model response would.
 
 Tests that wire adapters to the engine live in `src/integration/`, not `src/engine/` — the boundary rule forbids `engine/ → adapters/` with no test exemption.
+
+## Wire orientation
+
+`src/wire/` is what a model sees. `src/domain/` is what the system believes.
+Neither is derived from the other, and a `z.codec` is the only bridge.
+
+- **`engine/steps.ts` passes `UnderstandingDeltaCodec` where it used to pass
+  `UnderstandingDelta`.** A codec's input side is the wire and its output side is
+  the domain, so the generator emits the flat schema and returns an ordinary
+  domain delta. `Generated<UnderstandingDelta>` is unchanged; nothing below that
+  line knows a wire exists.
+- **Every field is required; `''` and `[]` mean absent.** An optional property and
+  a nullable one are both grammar branches; a plain `string` is not. For enums the
+  sentinel is a **member** (`z.enum(['','low'])` → one `enum`), never a union with
+  a literal (`z.enum(['low']).nullable()` → an `anyOf`). Zero unions depends on
+  that distinction.
+- **The sentinel is unambiguous only because every field it touches is `.min(1)`
+  in the domain.** Re-check that before adding a field; one where empty is
+  meaningful must not use this encoding.
+- **`blocking` is a three-state enum, not a boolean.** `false` cannot also mean
+  "unchanged", and a revise that did not restate it would silently clear a veto.
+- **`id` always names the thing an op acts on** — `''` for `add`, the item for
+  `revise`/`retire`, the promoted item for `promote`. There is no separate `from`
+  field: a second way to name the same thing is a second way to get it wrong.
+- **Revise and retire route by the id prefix; `target` is read only for `add`.**
+  The two can disagree, and throwing would cost a whole turn over a redundancy the
+  wire introduced itself.
+- **`decode` reports at wire paths** (`ops[3].kind`) through `ctx.issues`, so a
+  failure is a `ZodError` the retry decorator can re-ask on — not a lost turn —
+  and it names something in the schema the model was actually given.
+- **`encode` exists for one property test**, `decode(encode(x)) ≡ x`. Nothing in
+  production calls it. It is what makes adding a domain field with no wire home a
+  CI failure instead of a field that silently never reaches the model.
+- **Two things are deliberately not expressible**, each pinned by a test: clearing
+  a nullable field through a revise (`''` already means unchanged — use retire +
+  add), and clearing every user group.
 
 ## Domain model orientation
 
@@ -230,9 +267,10 @@ Consequences that remain:
 Three gates run over this package. Two enforce the provider-agnostic constraint, because a
 rule that lives only in prose decays silently:
 
-- `pnpm boundaries` (`scripts/check-boundaries.sh`) — the CI gate. Six `report()` calls
-  covering five documented rules (the domain third-party rule is two checks: production
-  files, and test files which may additionally use `vitest`).
+- `pnpm boundaries` (`scripts/check-boundaries.sh`) — the CI gate. Nine `report()` calls
+  covering six documented rules (the domain third-party rule is two checks — production
+  files, and test files which may additionally use `vitest` — and rule 6 is three:
+  `wire/ → domain/` only, `wire/` third-party, and `domain/ ↛ wire/`).
 - Biome `noRestrictedImports`, scoped per-directory in `biome.json` `overrides` — the
   editor gate, for feedback while typing.
 

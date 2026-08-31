@@ -14,15 +14,25 @@
 const DELTA_CONTRACT = `
 You return a DELTA — only what changed. Never restate the whole understanding.
 
+A delta is a flat list of \`ops\`. Each op says what it does in its \`op\` field;
+none of it is inferred from which fields you filled in.
+
+- \`add\`     — something new. Leave \`id\` empty; ids are assigned for you.
+               \`target\` says which list it joins.
+- \`revise\`  — change something that exists. Put its exact id in \`id\`.
+- \`retire\`  — drop something that was wrong or is no longer relevant.
+- \`promote\` — settle an open item. Put ITS id in \`id\`; it becomes a decision.
+
+**Every field is required, and empty means "nothing here".** Leave a field as ""
+when it does not apply, or — on a \`revise\` — when you are not changing it. On a
+revise, only the fields you actually fill in are touched; everything else keeps
+its current value. \`blocking\` is "yes", "no", or "" for unchanged.
+
 Rules that are enforced in code and will reject your output if broken:
-- To change something that exists, put it in \`revise\` with its exact existing ID.
-- To add something new, put it in \`add\` WITHOUT an id. Ids are assigned for you.
-- Never invent an ID. Referencing an ID that does not exist fails the whole turn.
-- In \`revise\`, include only the fields you are changing. Omitted fields are left
-  untouched. Send an explicit null only when you mean "this no longer applies".
+- Never invent an id. Referencing an id that does not exist fails the whole turn.
 - Every revise and retire needs a short \`reason\`. It becomes the audit trail.
-- Cite what you rely on in \`provenance\`, quoting the source verbatim where you can.
 - Every open item names the coverage \`dimension\` it belongs to.
+- Cite what you rely on in \`provenance\`, quoting the source verbatim where you can.
 `.trim();
 
 /**
@@ -37,23 +47,23 @@ Rules that are enforced in code and will reject your output if broken:
 const TIERS = `
 There are two tiers, and moving items from the second to the first is your job.
 
-SETTLED — \`decisions\`. Something you are confident is now closed. A decision
-carries a \`rationale\`: why this, and not the alternatives.
+SETTLED — \`target: "decision"\`. Something you are confident is now closed. A
+decision carries a \`rationale\`: why this, and not the alternatives.
 
-UNSETTLED — \`requirements\`, \`constraints\`, \`assumptions\`, \`contradictions\`.
+UNSETTLED — \`target: "requirement" | "constraint" | "assumption" | "contradiction"\`.
 Raw needs and open questions. These are proposals, not commitments.
 
 How things move:
-- \`decisions.promote\` takes an existing open item by its id in \`from\`, and
-  replaces it with a decision. Use it the moment something is genuinely settled —
-  an answer confirmed it, or a source states it unambiguously.
-- \`decisions.add\` creates a decision with no open item behind it, for something
-  a source settles outright.
+- \`op: "promote"\` takes an existing open item by its id and replaces it with a
+  decision. Use it the moment something is genuinely settled — an answer
+  confirmed it, or a source states it unambiguously.
+- \`op: "add"\` with \`target: "decision"\` creates a decision with no open item
+  behind it, for something a source settles outright.
 - Every decision must name what settled it. If a source settles it, put that
-  source id in \`settledBySourceId\`. If an answer settles it, leave that null —
+  source id in \`settledBySourceId\`. If an answer settles it, leave that empty —
   the system fills it in.
 - To replace a decision that turned out wrong, add a NEW decision with
-  \`supersedes\` naming the old one. Decisions are never edited and never deleted.
+  \`supersedes\` naming the old one. Decisions are never revised and never retired.
 - \`retire\` an open item only when it was wrong or no longer relevant. Retiring
   is not settling.
 

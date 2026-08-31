@@ -8,8 +8,9 @@ import {
   type SufficiencyVerdict,
   type Understanding,
   UnderstandingAssessment,
-  UnderstandingDelta,
+  type UnderstandingDelta,
 } from '../domain/index.ts';
+import { UnderstandingDeltaCodec } from '../wire/index.ts';
 import {
   type AnalyzeContext,
   buildAnalyzeInput,
@@ -25,6 +26,12 @@ import { ANALYZE_INSTRUCTIONS, ASSESS_INSTRUCTIONS, QUESTIONS_INSTRUCTIONS } fro
  * Deliberately thin. Anything that decides something belongs in the domain, and
  * anything that shapes context belongs in `context.ts`. What is left here is
  * only the wiring — which is why swapping providers changes nothing in this file.
+ *
+ * **`analyze` sends `UnderstandingDeltaCodec`, not `UnderstandingDelta`.** A
+ * codec's input side is the wire and its output side is the domain, so the
+ * generator emits a flat, sentinel-encoded schema and hands back an ordinary
+ * domain delta. `Generated<UnderstandingDelta>` is unchanged; only the schema
+ * the provider sees is different, and nothing below this line learns that.
  */
 
 export interface StepDeps {
@@ -69,7 +76,13 @@ const EFFORT = {
  * numbers in brackets.
  */
 const MAX_OUTPUT_TOKENS = {
-  /** Thinking is off here (see `anthropic.ts`), so this is all answer. [382, 434] */
+  /**
+   * Was "thinking is off here" — that was true only while the delta schema was
+   * too branchy to compile, which forced `jsonTool` mode and forbade thinking.
+   * The wire codec brought it back under the caps, so `effort: 'high'` reaches
+   * the model again and the answer budget now shares the request with a
+   * thinking budget added on top. [382, 434 without thinking]
+   */
   analyze: 8_000,
   /** Delta plus assessment in one response. */
   analyzeAndAssess: 14_000,
@@ -83,7 +96,7 @@ export async function analyze(
   deps: StepDeps,
   context: AnalyzeContext,
 ): Promise<Generated<UnderstandingDelta>> {
-  return deps.generator.generate(UnderstandingDelta, {
+  return deps.generator.generate(UnderstandingDeltaCodec, {
     operation: OPERATION.analyze,
     instructions: ANALYZE_INSTRUCTIONS,
     input: buildAnalyzeInput(context),
@@ -114,7 +127,7 @@ export async function assess(
  * `merged` strategy makes in exchange for sending the understanding once.
  */
 export const AnalyzeAndAssessResult = z.object({
-  delta: UnderstandingDelta,
+  delta: UnderstandingDeltaCodec,
   assessment: UnderstandingAssessment,
 });
 export type AnalyzeAndAssessResult = z.infer<typeof AnalyzeAndAssessResult>;
