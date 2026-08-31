@@ -123,8 +123,9 @@ describe('runTurn — the gathering loop', () => {
 
     expect(result.session.status).toBe('awaiting-answers');
     expect(result.revision.revision).toBe(0);
-    expect(result.revision.content.requirements).toHaveLength(1);
-    expect(result.revision.content.gaps).toHaveLength(2);
+    expect(result.revision.content.requirements).toHaveLength(2);
+    expect(result.revision.content.constraints).toHaveLength(1);
+    expect(result.revision.content.decisions).toHaveLength(0);
     expect(result.questions).toHaveLength(2);
     expect(result.session.questionsAsked).toBe(2);
 
@@ -150,7 +151,7 @@ describe('runTurn — the gathering loop', () => {
     expect(questions.every((q) => q.allowsCustom)).toBe(true);
   });
 
-  it('turn 2 folds answers in, resolves the gaps, and reaches sufficiency', async () => {
+  it('turn 2 folds answers in, promotes the answered items, and reaches sufficiency', async () => {
     const h = harness();
     const { session, sourceId } = await seedSession(h);
 
@@ -168,11 +169,19 @@ describe('runTurn — the gathering loop', () => {
     expect(second.session.status).toBe('sufficient');
     expect(second.turn.verdict.sufficient).toBe(true);
     expect(second.revision.revision).toBe(1);
-    expect(second.revision.content.gaps).toHaveLength(0);
-    expect(second.revision.content.resolvedGaps).toHaveLength(2);
-    // Turn 1's requirement survived turn 2 untouched — the property deltas exist for.
-    expect(second.revision.content.requirements).toHaveLength(2);
+
+    // Two answered items were promoted, so they left their collections and the
+    // decisions array grew. This is the loop's whole job in one assertion.
+    expect(second.revision.content.decisions).toHaveLength(2);
+    expect(second.revision.content.constraints).toHaveLength(0);
+    // Turn 1's unanswered requirement survived turn 2 untouched — the property
+    // deltas exist for — while its answered sibling was promoted away.
+    expect(second.revision.content.requirements).toHaveLength(1);
     expect(second.revision.content.requirements[0]?.id).toBe('req-1');
+
+    // `settledBy` is the engine's derived AnswerId, never a model transcription.
+    expect(second.revision.content.decisions[0]?.settledBy).toBe(second.turn.inputAnswerIds[0]);
+    expect(second.revision.content.decisions[0]?.promotedFrom).toBe('req-2');
     h.generator.assertScriptDrained();
   });
 
@@ -259,7 +268,7 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
   it('caps questions per turn so a round stays answerable', async () => {
     const many = {
       questions: Array.from({ length: 6 }, (_, i) => ({
-        gapId: i % 2 === 0 ? 'gap-1' : 'gap-2',
+        dimension: i % 2 === 0 ? 'acceptance' : 'users',
         text: `Question ${i}?`,
         mode: 'single',
         options: [{ label: 'A' }, { label: 'B' }],
@@ -282,15 +291,23 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
     expect(result.session.questionsAsked).toBe(4);
   });
 
-  it('drops questions aimed at gaps that do not exist', async () => {
+  it('keeps a question whose `about` names nothing, clearing the stale pointer', async () => {
+    // Before the redesign this question was *dropped*, because a question had to
+    // name a live Gap. Dropping it is now the wrong move: the question is still
+    // worth asking, it simply no longer settles that particular item.
     const h = harness('separate', {
       analyze: [TURN_1_DELTA],
       assess: [TURN_1_ASSESSMENT],
       'generate-questions': [
         {
           questions: [
-            { gapId: 'gap-99', text: 'Invented gap?', mode: 'single', options: [] },
-            { gapId: 'gap-1', text: 'Real gap?', mode: 'single', options: [] },
+            {
+              dimension: 'acceptance',
+              about: 'req-99',
+              text: 'Invented target?',
+              mode: 'single',
+              options: [],
+            },
           ],
         },
       ],
@@ -304,7 +321,8 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
     );
 
     expect(result.questions).toHaveLength(1);
-    expect(result.questions[0]?.gapId).toBe('gap-1');
+    expect(result.questions[0]?.about).toBeNull();
+    expect(result.questions[0]?.dimension).toBe('acceptance');
   });
 });
 
@@ -331,7 +349,7 @@ describe('turn strategies', () => {
         strategy,
         status: second.session.status,
         requirements: second.revision.content.requirements.map((r) => r.statement),
-        resolved: second.revision.content.resolvedGaps.length,
+        decisions: second.revision.content.decisions.map((d) => d.statement),
         questionsAsked: second.session.questionsAsked,
         inputTokens: h.generator.totals().inputTokens,
         modelCalls: h.generator.calls.length,
@@ -343,7 +361,7 @@ describe('turn strategies', () => {
     expect(separate?.status).toBe('sufficient');
     expect(merged?.status).toBe(separate?.status);
     expect(merged?.requirements).toEqual(separate?.requirements);
-    expect(merged?.resolved).toBe(separate?.resolved);
+    expect(merged?.decisions).toEqual(separate?.decisions);
     expect(merged?.questionsAsked).toBe(separate?.questionsAsked);
 
     // The reason both exist: merged trades fidelity for tokens, and the

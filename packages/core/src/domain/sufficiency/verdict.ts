@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { GapId } from '../shared/ids.ts';
+import { OpenItemId } from '../shared/ids.ts';
 import { CoverageAssessment, CoverageDimension } from './coverage.ts';
 
 /**
@@ -17,7 +17,7 @@ export const SufficiencyVerdict = z.object({
   coverage: z.array(CoverageAssessment),
   /** Required dimensions below the policy bar, weakest first — steers the next questions. */
   shortfalls: z.array(CoverageDimension).default([]),
-  blockingGapIds: z.array(GapId).default([]),
+  blockingItemIds: z.array(OpenItemId).default([]),
   questionsAsked: z.number().int().nonnegative(),
   questionBudget: z.number().int().positive(),
   budgetExhausted: z.boolean(),

@@ -1,26 +1,47 @@
-import { DuplicateIdError, UnknownReferenceError } from '../shared/errors.ts';
+import {
+  DuplicateIdError,
+  UnknownReferenceError,
+  UnsettledDecisionError,
+} from '../shared/errors.ts';
 import {
   type AnswerId,
   AssumptionId,
   ConstraintId,
   ContradictionId,
-  GapId,
+  DecisionId,
   ID_PREFIX,
+  type OpenItemId,
   RequirementId,
+  type SettledBy,
+  type SourceId,
 } from '../shared/ids.ts';
 import type { UnderstandingDelta } from './delta.ts';
-import { type Gap, type NextIds, type ResolvedGap, Understanding } from './understanding.ts';
+import type { DecisionDraft, PromotionDraft } from './drafts.ts';
+import { type Decision, type NextIds, type OpenItem, Understanding } from './understanding.ts';
 
 export interface ApplyDeltaContext {
   /**
-   * Which answer closed which gap, keyed by gap id.
+   * Which answer settled which open item, keyed by open-item id.
    *
-   * The engine supplies this rather than the model, because it is derivable:
-   * a `Question` carries its `gapId` and an `Answer` carries its `questionId`,
-   * so gap → answer is a lookup. Asking a model to transcribe a 40-character
+   * The engine supplies this rather than the model, because it is derivable: a
+   * `Question` carries `about` and an `Answer` carries its `questionId`, so
+   * item → answer is a lookup. Asking a model to transcribe a 40-character
    * `AnswerId` to state something already known is pure risk for no information.
+   *
+   * When a promotion's `from` appears here, the derived answer **wins** over
+   * whatever source the model cited: the engine's fact beats the model's claim.
    */
-  readonly resolvedBy?: ReadonlyMap<string, AnswerId> | undefined;
+  readonly settledBy?: ReadonlyMap<string, AnswerId> | undefined;
+  /**
+   * Every source id this session actually has, for validating a model-cited
+   * `settledBySourceId`.
+   *
+   * Optional, and skipped when absent — deliberately, because most unit tests
+   * construct a delta with no session behind it. The engine always supplies it,
+   * so the production path is always checked; a test that wants the check writes
+   * the set.
+   */
+  readonly knownSourceIds?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -47,11 +68,11 @@ interface CollectionOps<E extends { readonly id: string }> {
     readonly id: string;
     readonly reason: string;
   })[];
-  readonly remove: readonly { readonly id: string }[];
+  readonly retire: readonly { readonly id: string }[];
 }
 
 /**
- * Applies add / revise / remove to one collection.
+ * Applies add / revise / retire to one uncertain collection.
  *
  * Unknown IDs throw rather than being ignored. A model that invents `req-99`
  * must fail loudly — silently discarding the operation would mean the delta was
@@ -66,7 +87,7 @@ function mergeCollection<E extends { readonly id: string }>(
 ): E[] {
   const byId = new Map<string, E>(current.map((entry) => [entry.id, entry]));
 
-  const unknown = [...ops.revise, ...ops.remove].map((op) => op.id).filter((id) => !byId.has(id));
+  const unknown = [...ops.revise, ...ops.retire].map((op) => op.id).filter((id) => !byId.has(id));
   if (unknown.length > 0) {
     throw new UnknownReferenceError(collection, [...new Set(unknown)]);
   }
@@ -80,7 +101,7 @@ function mergeCollection<E extends { readonly id: string }>(
     }
   }
 
-  for (const entry of ops.remove) byId.delete(entry.id);
+  for (const entry of ops.retire) byId.delete(entry.id);
 
   // Insertion order is preserved, so newly added entries land at the end and the
   // sequence stays stable across turns — which is what makes diffs readable.
@@ -107,9 +128,9 @@ function mergeCollection<E extends { readonly id: string }>(
 /**
  * Produces the next Understanding from the current one plus a delta.
  *
- * Pure and total: it is now a function of `(current, delta)` alone — no
- * `IdGenerator`, because ids are minted from counters carried in the document
- * itself. That makes it *more* deterministic than before, not less.
+ * Pure and total: a function of `(current, delta)` plus an optional context of
+ * facts the *engine* knows and the model does not. No `IdGenerator` — ids are
+ * minted from counters carried in the document itself.
  *
  * Either the whole delta applies or it throws. There is no partial path.
  */
@@ -155,30 +176,103 @@ export function applyDelta(
     mint('contradiction', ContradictionId),
   );
 
-  const mergedGaps = mergeCollection('gap', current.gaps, delta.gaps, mint('gap', GapId));
-
-  // Resolution runs after add/revise/remove so it sees the merged set. It can
-  // only target gaps that already existed, since a gap added in this same delta
-  // has a freshly minted ID the model had no way to reference.
-  const openGaps = new Map<string, Gap>(mergedGaps.map((gap) => [gap.id, gap]));
-  const unknownResolutions = delta.gaps.resolve
-    .map((resolution) => resolution.id)
-    .filter((id) => !openGaps.has(id));
-  if (unknownResolutions.length > 0) {
-    throw new UnknownReferenceError('gap (resolution)', [...new Set(unknownResolutions)]);
+  // Keyed by id across all four collections at once. Promotion is the one
+  // operation that does not care which collection an item came from — that is
+  // what makes them one tier rather than four unrelated lists.
+  const open = new Map<string, { item: OpenItem; collection: OpenItem[] }>();
+  for (const collection of [requirements, constraints, assumptions, contradictions]) {
+    for (const item of collection) open.set(item.id, { item, collection });
   }
 
-  const newlyResolved: ResolvedGap[] = [];
-  for (const resolution of delta.gaps.resolve) {
-    const gap = openGaps.get(resolution.id);
-    if (gap === undefined) continue;
-    openGaps.delete(resolution.id);
-    newlyResolved.push({
-      ...gap,
-      resolvedByAnswerId: ctx.resolvedBy?.get(resolution.id) ?? null,
-      resolution: resolution.resolution,
-    });
+  const mintDecision = mint('decision', DecisionId);
+  const decisions = [...current.decisions];
+  const byDecisionId = new Map<string, number>(decisions.map((d, index) => [d.id, index]));
+
+  /**
+   * Resolves what settled a decision, preferring the engine's derived answer over
+   * the model's cited source. Throws rather than defaulting: a Decision with no
+   * traceable origin is exactly the un-auditable record this tier exists to avoid.
+   */
+  const settledByFor = (draft: DecisionDraft, from: OpenItemId | null): SettledBy => {
+    const derived = from === null ? undefined : ctx.settledBy?.get(from);
+    if (derived !== undefined) return derived;
+
+    const cited = draft.settledBySourceId;
+    if (cited === null) throw new UnsettledDecisionError(draft.statement, from);
+    if (ctx.knownSourceIds !== undefined && !ctx.knownSourceIds.has(cited)) {
+      throw new UnknownReferenceError('decision (settledBySourceId)', [cited]);
+    }
+    return cited as SourceId;
+  };
+
+  /**
+   * Writes the forward pointer onto the record being replaced.
+   *
+   * Superseding an already-superseded decision throws: it means the model was
+   * reasoning about state two revisions stale, and silently allowing it would
+   * fork the supersession chain into a shape nothing can render.
+   */
+  const applySupersession = (target: DecisionId | null, replacement: DecisionId): void => {
+    if (target === null) return;
+    const index = byDecisionId.get(target);
+    const existing = index === undefined ? undefined : decisions[index];
+    if (index === undefined || existing === undefined) {
+      throw new UnknownReferenceError('decision (supersedes)', [target]);
+    }
+    if (existing.supersededBy !== null) {
+      throw new UnknownReferenceError('decision (already superseded)', [target]);
+    }
+    decisions[index] = { ...existing, supersededBy: replacement };
+  };
+
+  const decisionFrom = (draft: DecisionDraft, from: OpenItemId | null): Decision => {
+    const { settledBySourceId: _cited, supersedes: _supersedes, ...content } = draft;
+    const id = mintDecision();
+    const decision: Decision = {
+      ...content,
+      id,
+      promotedFrom: from,
+      settledBy: settledByFor(draft, from),
+      supersededBy: null,
+    };
+    applySupersession(draft.supersedes, id);
+    decisions.push(decision);
+    byDecisionId.set(id, decisions.length - 1);
+    return decision;
+  };
+
+  // Promotions are validated as a batch before any of them runs, so a delta with
+  // one bad reference fails with every bad reference named rather than with the
+  // first — the same contract `mergeCollection` gives.
+  const promotions: readonly PromotionDraft[] = delta.decisions.promote;
+  const unknownPromotions = promotions.map((p) => p.from).filter((from) => !open.has(from));
+  if (unknownPromotions.length > 0) {
+    throw new UnknownReferenceError('open item (promotion)', [...new Set(unknownPromotions)]);
   }
+  const seenFrom = new Set<string>();
+  const duplicatePromotions: string[] = [];
+  for (const { from } of promotions) {
+    if (seenFrom.has(from)) duplicatePromotions.push(from);
+    seenFrom.add(from);
+  }
+  if (duplicatePromotions.length > 0) {
+    throw new DuplicateIdError(
+      'open item (promotion)',
+      [...new Set(duplicatePromotions)].join(', '),
+    );
+  }
+
+  for (const promotion of promotions) {
+    const entry = open.get(promotion.from);
+    if (entry === undefined) continue;
+    decisionFrom(promotion, promotion.from);
+    // Removing from the live array rather than rebuilding: `open` holds the very
+    // arrays that get parsed below, so this is the removal.
+    entry.collection.splice(entry.collection.indexOf(entry.item), 1);
+    open.delete(promotion.from);
+  }
+
+  for (const draft of delta.decisions.add) decisionFrom(draft, null);
 
   const product =
     delta.product === null
@@ -189,12 +283,11 @@ export function applyDelta(
   // regardless of what a model proposed.
   return Understanding.parse({
     product,
+    decisions,
     requirements,
     constraints,
     assumptions,
     contradictions,
-    gaps: [...openGaps.values()],
-    resolvedGaps: [...current.resolvedGaps, ...newlyResolved],
     nextIds: counters,
   });
 }

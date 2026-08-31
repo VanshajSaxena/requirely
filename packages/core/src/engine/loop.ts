@@ -7,11 +7,12 @@ import {
   type Clock,
   decideSufficiency,
   emptyUnderstanding,
-  type GapId,
   type IdGenerator,
   type InquiryRepository,
   isAnalyzable,
   materializeQuestions,
+  type OpenItemId,
+  openItems,
   type Question,
   type QuestionDraft,
   RevisionId,
@@ -60,22 +61,27 @@ export interface TurnRequest {
 // caller wants to inspect and what needs persisting are the same thing.
 
 /**
- * Reconciles the model's opinion about blocking gaps with what actually exists.
+ * Reconciles the model's opinion about blocking items with what actually exists.
  *
- * Two sources of truth get unioned: gaps the analysis flagged `blocking`, and
- * gaps the assessment named. IDs that match no open gap are **dropped, not
+ * Two sources of truth get unioned: items the analysis flagged `blocking`, and
+ * items the assessment named. IDs that match no open item are **dropped, not
  * thrown** — unlike a delta, where a bad ID must fail the turn. The asymmetry is
- * deliberate: a hallucinated blocking gap that survived would veto sufficiency
+ * deliberate: a hallucinated blocking item that survived would veto sufficiency
  * on every future turn, deadlocking the session permanently. A delta failing
  * loudly costs one retry; this failing loudly costs the whole session.
+ *
+ * Promotion makes the drop rule matter more, not less: an item named as blocking
+ * on turn N may have become a Decision by turn N+1, so a stale id is now an
+ * ordinary outcome of the loop working rather than a sign of model error.
  */
-export function resolveBlockingGaps(
+export function resolveBlockingItems(
   understanding: Understanding,
   assessment: UnderstandingAssessment,
-): GapId[] {
-  const open = new Map(understanding.gaps.map((gap) => [gap.id as string, gap]));
-  const flagged = understanding.gaps.filter((gap) => gap.blocking).map((gap) => gap.id);
-  const claimed = assessment.blockingGapIds.filter((id) => open.has(id));
+): OpenItemId[] {
+  const items = openItems(understanding);
+  const open = new Set(items.map((item) => item.id as string));
+  const flagged = items.filter((item) => item.blocking).map((item) => item.id as OpenItemId);
+  const claimed = assessment.blockingItemIds.filter((id) => open.has(id));
   return [...new Set([...flagged, ...claimed])];
 }
 
@@ -84,8 +90,15 @@ export function resolveBlockingGaps(
  *
  * Ordering comes from the domain's own computed shortfall order, not from a
  * priority number the model invents — the same reason `Requirement.confidence`
- * was removed. Drafts targeting a gap that is not open are dropped, because a
- * question nobody can act on wastes a slot from a finite budget.
+ * was removed.
+ *
+ * **The old "must target an open gap" filter is gone, and its absence is the
+ * point.** A question used to be dropped unless it named a live `Gap`, which
+ * meant a model could only ask about something it had first invented an entity
+ * for. Now `dimension` is always valid, so a question about an *absence* — the
+ * most valuable kind on turn one — survives. Only `about`, which is optional,
+ * is checked, and a stale one is cleared rather than dropping the question:
+ * the question is still worth asking, it just no longer settles that item.
  */
 export function selectQuestions(
   drafts: readonly QuestionDraft[],
@@ -93,22 +106,22 @@ export function selectQuestions(
   verdict: SufficiencyVerdict,
   cap: number,
 ): QuestionDraft[] {
-  const dimensionOf = new Map(understanding.gaps.map((gap) => [gap.id as string, gap.dimension]));
+  const open = new Set(openItems(understanding).map((item) => item.id as string));
 
   const rank = (draft: QuestionDraft): number => {
-    const dimension = dimensionOf.get(draft.gapId);
-    const index = dimension === undefined ? -1 : verdict.shortfalls.indexOf(dimension);
+    const index = verdict.shortfalls.indexOf(draft.dimension);
     // Dimensions that are not shortfalls sort after those that are, preserving
     // the model's own ordering within each band.
     return index === -1 ? Number.MAX_SAFE_INTEGER : index;
   };
 
   return drafts
-    .filter((draft) => dimensionOf.has(draft.gapId))
     .map((draft, order) => ({ draft, order, rank: rank(draft) }))
     .sort((a, b) => a.rank - b.rank || a.order - b.order)
     .slice(0, cap)
-    .map((entry) => entry.draft);
+    .map(({ draft }) =>
+      draft.about !== null && !open.has(draft.about) ? { ...draft, about: null } : draft,
+    );
 }
 
 /** Pairs each answer with its question, validating before anything costs tokens. */
@@ -181,19 +194,29 @@ export async function runTurn(
 
   const turnId = TurnId.parse(deps.ids.next('turn'));
 
-  // Guarded so a strategy calling it twice fails immediately rather than
-  // producing a revision built from two conflicting ID sequences.
-  // Which answer closed which gap. Derivable — a Question carries its gapId and
-  // an Answer carries its questionId — so the model is never asked to state it.
-  const resolvedBy = new Map<string, AnswerId>(
-    answered.map(({ question, answer }) => [question.gapId, answer.id]),
+  // Which answer settled which open item. Derivable — a Question carries `about`
+  // and an Answer carries its questionId — so the model is never asked to state
+  // it, which is what keeps a 40-character AnswerId off the wire.
+  const settledBy = new Map<string, AnswerId>(
+    answered
+      .filter(({ question }) => question.about !== null)
+      .map(({ question, answer }) => [question.about as string, answer.id]),
   );
 
+  // Every source the session has, so a model-cited `settledBySourceId` is checked
+  // against reality rather than trusted. Loaded here rather than inside applyDelta
+  // because the domain has no repository — which is the point of the port.
+  const knownSourceIds = new Set(
+    (await deps.sources.listBySession(session.id)).map((source) => source.id as string),
+  );
+
+  // Guarded so a strategy calling it twice fails immediately rather than
+  // producing a revision built from two conflicting ID sequences.
   let merged = false;
   const merge: Merge = (delta) => {
     if (merged) throw new Error('the delta was applied more than once in a single turn');
     merged = true;
-    return applyDelta(current, delta, { resolvedBy });
+    return applyDelta(current, delta, { settledBy, knownSourceIds });
   };
 
   const analysis = await deps.strategy(
@@ -207,7 +230,7 @@ export async function runTurn(
   const verdict = decideSufficiency(
     {
       ...analysis.assessment,
-      blockingGapIds: resolveBlockingGaps(understanding, analysis.assessment),
+      blockingItemIds: resolveBlockingItems(understanding, analysis.assessment),
     },
     deps.policy,
     { questionsAsked: session.questionsAsked, questionBudget: session.questionBudget },
@@ -247,7 +270,7 @@ export async function runTurn(
       throw new CapabilityError(
         'generate-questions',
         'engine',
-        'not sufficient, but no askable question targets an open gap — analysis recorded coverage shortfalls without gaps to close them',
+        'not sufficient, but the model drafted no questions — the loop cannot advance without something to ask',
       );
     }
 

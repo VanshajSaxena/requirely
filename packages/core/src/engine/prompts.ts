@@ -20,8 +20,46 @@ Rules that are enforced in code and will reject your output if broken:
 - Never invent an ID. Referencing an ID that does not exist fails the whole turn.
 - In \`revise\`, include only the fields you are changing. Omitted fields are left
   untouched. Send an explicit null only when you mean "this no longer applies".
-- Every revise and remove needs a short \`reason\`. It becomes the audit trail.
+- Every revise and retire needs a short \`reason\`. It becomes the audit trail.
 - Cite what you rely on in \`provenance\`, quoting the source verbatim where you can.
+- Every open item names the coverage \`dimension\` it belongs to.
+`.trim();
+
+/**
+ * The two-tier rule, stated for the model in the terms it must act in.
+ *
+ * This is the prompt half of the domain change, and it is where the design's one
+ * measurable goal lives: **more settled than unsettled, turn over turn.** The
+ * schema cannot enforce it — nothing structurally stops a model proposing ten
+ * requirements and promoting none — so it is stated here and measured by the
+ * eval suite rather than asserted anywhere.
+ */
+const TIERS = `
+There are two tiers, and moving items from the second to the first is your job.
+
+SETTLED — \`decisions\`. Something you are confident is now closed. A decision
+carries a \`rationale\`: why this, and not the alternatives.
+
+UNSETTLED — \`requirements\`, \`constraints\`, \`assumptions\`, \`contradictions\`.
+Raw needs and open questions. These are proposals, not commitments.
+
+How things move:
+- \`decisions.promote\` takes an existing open item by its id in \`from\`, and
+  replaces it with a decision. Use it the moment something is genuinely settled —
+  an answer confirmed it, or a source states it unambiguously.
+- \`decisions.add\` creates a decision with no open item behind it, for something
+  a source settles outright.
+- Every decision must name what settled it. If a source settles it, put that
+  source id in \`settledBySourceId\`. If an answer settles it, leave that null —
+  the system fills it in.
+- To replace a decision that turned out wrong, add a NEW decision with
+  \`supersedes\` naming the old one. Decisions are never edited and never deleted.
+- \`retire\` an open item only when it was wrong or no longer relevant. Retiring
+  is not settling.
+
+Do not promote to look productive. A decision nobody actually made is worse than
+an open item, because the open item still gets a question and the decision gets
+built.
 `.trim();
 
 export const ANALYZE_INSTRUCTIONS = `
@@ -32,18 +70,21 @@ questions previously asked. Produce the delta that folds the new information in.
 
 ${DELTA_CONTRACT}
 
-Also maintain gaps:
-- Add a gap for anything genuinely missing that would prevent describing what to
-  build. Each gap names the coverage dimension it belongs to.
-- Mark a gap \`blocking\` only if you could not responsibly write a specification
-  without it. Blocking gaps veto completion, so use the flag sparingly.
-- When an answer or new source closes an existing gap, put it in \`resolve\` with
-  what was learned. Do not leave answered gaps open.
-- Record a contradiction when two sources genuinely conflict, citing both.
-- Record an assumption whenever you fill something in that nobody stated.
+${TIERS}
 
-Be conservative. Inventing requirements nobody asked for is worse than leaving a
-gap open, because a gap gets a question and a fabrication gets built.
+Also:
+- Mark an open item \`blocking\` only if you could not responsibly write a
+  specification without it. Blocking items veto completion, so use it sparingly.
+- Record a contradiction when two sources genuinely conflict, citing both. Settle
+  one by promoting it, once you know which side holds.
+- An assumption is a LAST RESORT. Before adding one, ask whether the thing could
+  instead be an open requirement that gets a question — it almost always can.
+  Add an assumption only when the work cannot be described at all without
+  filling the hole, and say in \`basis\` exactly what you filled it from.
+
+Be conservative. Inventing requirements nobody asked for is worse than leaving
+something open, because an open item gets a question and a fabrication gets
+built.
 `.trim();
 
 export const ASSESS_INSTRUCTIONS = `
@@ -66,14 +107,24 @@ omit is treated as zero, not as fine.
 Give each score a one-sentence rationale naming the specific evidence or its
 absence. "Mostly clear" is not a rationale.
 
-List the IDs of gaps that must be closed before this could be specified at all.
-Only list gaps that appear in the input.
+Score against what is SETTLED. An open requirement is a proposal, not knowledge —
+a dimension full of unsettled items is not a well-understood dimension.
+
+List the IDs of open items that must be settled before this could be specified at
+all. Only list ids that appear in the input.
 `.trim();
 
 export const QUESTIONS_INSTRUCTIONS = `
 You write the questions that will close the most uncertainty in the fewest asks.
 
-Every question must target one of the listed open gaps by its exact ID.
+You are not a question-asking machine. Every question should feel like it came
+from someone who has already thought the problem through and is checking their
+reasoning — not from a form.
+
+Every question names the coverage \`dimension\` it serves. If it would settle one
+specific open item, put that item's exact id in \`about\`; otherwise leave \`about\`
+null. A question about something nobody has mentioned at all is often the most
+valuable one you can ask, and it needs no item to point at.
 
 Give each question 2 or more answer options when plausible answers exist, ordered
 most-likely first. Options are the low-effort path: a user should usually be able

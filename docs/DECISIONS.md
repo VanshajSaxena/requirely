@@ -58,9 +58,66 @@ token cost flat instead of proportional to document size.
 
 The cost is a real merge function — `applyDelta`, pure and exhaustively tested.
 
+### Two tiers: settled `Decision`s and open items (Phase 8)
+
+**`Decision` is the settled tier; requirements, constraints, assumptions and
+contradictions are the uncertain one.** The loop's job is to move items from the
+second to the first, and the design goal is stated as a direction rather than a
+threshold: *always move towards more Decisions than uncertain items.*
+
+**`Gap` was deleted.** An unsettled requirement *is* the gap, so a separate
+collection was double-bookkeeping — and it forced a model to invent a `Gap`
+entity before it could ask about an absence. `dimension` moved onto the uncertain
+items, where it is a **lens** rather than a verdict: "nobody has said how success
+is measured" is now the `acceptance` dimension scoring low with nothing behind
+it, which needs no entity at all.
+
+**Decisions are immutable, following the ADR rule.** A decision is never edited
+to flip its content and never deleted; a new one is written and the old is marked
+`supersededBy`. Three consequences, each deliberate:
+
+- `decisions[]` grows monotonically. That is weakness #6 reintroduced *as a
+  commitment* — the trail of supersessions is the architectural history.
+- **There is no `status` enum.** Nygard's Proposed/Accepted/Deprecated/Superseded
+  vocabulary is already covered: proposed-vs-accepted *is* the two-tier split,
+  and superseded is `supersededBy !== null`. One durable reference beats a tag.
+- `supersededBy` points **forward**, set on the old record, so "is this current?"
+  is a field read rather than a scan of every other decision.
+
+**Rejected options are derived, never copied.** MADR's most valuable section is
+*Considered Options with pros and cons* — the "why not X?" an SRS otherwise never
+answers. `settledBy → Answer → Question → options` reaches it, so duplicating
+them onto the Decision would denormalise what a reference already gets for free.
+
+**Anything referenced outside an entity is a durable id, never a tag.**
+`settledBy: 'user'` is a stringly-typed pointer at nothing; `settledBy: ans-2` is
+auditable and query-able, which is what multi-user needs later. And the model may
+only ever *emit* the Source half: `AnswerId` is a 40-character UUIDv7, and asking
+a model to transcribe one is the failure Phase 3b removed. The engine derives
+answer-settled promotions from `Question.about` instead.
+
+**`Contradiction.resolution` was deleted.** Resolving a contradiction *is*
+deciding which side holds, which is a promotion. A `resolution` string alongside
+would be a second way to record the same event — and the one that is not
+auditable.
+
+**`Assumption` stays**, controlled by prompting rather than by modelling.
+ISO/IEC/IEEE 29148 treats assumptions, constraints and requirements as *distinct*
+information items in an SRS, so this is standards-aligned rather than merely
+tolerated. The prompt names an assumption a last resort; the eval suite measures
+assumptions-per-turn, because "is this assumption warranted?" is not
+structurally checkable.
+
+**QOC's `Criteria` are deliberately not modelled.** QOC compares options against
+reusable named criteria; we compare them by what each one commits you to.
+Criteria are the part of QOC that most obviously adds capture burden, and capture
+burden is the documented reason IBIS and QOC failed to be adopted.
+
+---
+
 **The model produces evidence; the domain produces decisions.** The model scores
-coverage per dimension and names blocking gaps; `decideSufficiency` applies an
-explicit `SufficiencyPolicy` to get the boolean. Raising the bar is changing a
+coverage per dimension and names blocking open items; `decideSufficiency` applies
+an explicit `SufficiencyPolicy` to get the boolean. Raising the bar is changing a
 number, not editing a prompt and re-evaluating everything.
 
 **`sufficient` and `budgetExhausted` are independent.** Running out of questions

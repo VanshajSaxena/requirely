@@ -97,22 +97,26 @@ export const fixtures = {
         createdAt: AT,
         content: {
           product: { name: 'Requirely' },
+          // One of each tier, so the JSONB round-trip covers both the settled
+          // shape (which carries `settledBy` and `promotedFrom`) and the open one.
+          decisions: [
+            {
+              id: 'dec-1',
+              statement: 'Sign-in is SSO via Okta',
+              kind: 'functional',
+              dimension: 'core-behaviour',
+              rationale: 'The only identity provider the org already runs.',
+              promotedFrom: 'req-2',
+              settledBy: 'src-1',
+            },
+          ],
           requirements: [
             {
               id: 'req-1',
               statement: 'Users sign in via SSO',
               kind: 'functional',
+              dimension: 'core-behaviour',
               provenance: [{ sourceId: 'src-1', quote: 'We need SSO.' }],
-            },
-          ],
-          gaps: [
-            {
-              id: 'gap-1',
-              dimension: 'acceptance',
-              topic: 'done criteria',
-              description: 'unknown',
-              blocking: false,
-              impact: 'high',
             },
           ],
         },
@@ -131,7 +135,7 @@ export const fixtures = {
           rationale: 'Not yet sufficient: coverage below the 0.70 bar for: acceptance (0.20).',
           coverage: [{ dimension: 'acceptance', score: 0.2, rationale: 'nothing stated' }],
           shortfalls: ['acceptance'],
-          blockingGapIds: [],
+          blockingItemIds: [],
           questionsAsked: 0,
           questionBudget: 12,
           budgetExhausted: false,
@@ -153,7 +157,8 @@ export const fixtures = {
           id: `qst-${index + 1}`,
           sessionId: 'ses-1',
           turnId,
-          gapId: 'gap-1',
+          dimension: 'acceptance',
+          about: 'req-1',
           text: 'How would you know this worked?',
           mode: 'single',
           options: [

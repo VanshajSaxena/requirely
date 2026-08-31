@@ -1,11 +1,13 @@
 import type {
   Answer,
+  OpenItem,
   Question,
   Session,
   Source,
   SufficiencyVerdict,
   Understanding,
 } from '../domain/index.ts';
+import { currentDecisions, openItems } from '../domain/index.ts';
 
 /**
  * Everything a model sees is assembled here and nowhere else.
@@ -27,6 +29,17 @@ const section = (title: string, lines: readonly string[]): string =>
 
 const join = (blocks: readonly string[]): string => blocks.filter((b) => b.length > 0).join('\n\n');
 
+/**
+ * `[req-1 acceptance BLOCKING]` — id, lens, and veto flag in one bracket.
+ *
+ * Every open item carries the same three facts, so rendering them one way means
+ * a model reads `[con-2 data]` and `[req-1 acceptance]` with the same grammar.
+ * The dimension is inside the bracket on purpose: it is what a question targets
+ * now that `Gap` is gone.
+ */
+const marker = (item: OpenItem): string =>
+  `[${item.id} ${item.dimension}${item.blocking ? ' BLOCKING' : ''}]`;
+
 export function renderSources(sources: readonly Source[]): string {
   if (sources.length === 0) return '';
   const blocks = sources.map(
@@ -47,7 +60,7 @@ export function renderAnswers(answered: readonly AnsweredQuestion[]): string {
       .map((id) => question.options.find((option) => option.id === id)?.label ?? id)
       .join('; ');
     const parts = [
-      `- Q [${question.id}] (gap ${question.gapId}): ${question.text}`,
+      `- Q [${question.id}] (${question.dimension}${question.about === null ? '' : `, about ${question.about}`}): ${question.text}`,
       chosen.length > 0 ? `  chose: ${chosen}` : '',
       answer.customText !== null ? `  said: ${answer.customText}` : '',
       answer.additionalContext !== null ? `  also: ${answer.additionalContext}` : '',
@@ -71,44 +84,40 @@ export function renderUnderstanding(understanding: Understanding): string {
   return join([
     section('Product', productLines),
     section(
-      'Requirements',
+      'Settled decisions',
+      currentDecisions(understanding).map(
+        (d) =>
+          `- [${d.id}] (${d.kind}/${d.dimension}) ${d.statement}\n    because: ${d.rationale}\n    settled by: ${d.settledBy}${d.promotedFrom === null ? '' : ` (was ${d.promotedFrom})`}`,
+      ),
+    ),
+    section(
+      'Open requirements',
       understanding.requirements.map((requirement) => {
         const cites = requirement.provenance
           .map((p) => p.quote ?? p.note ?? p.sourceId)
           .join(' | ');
-        return `- [${requirement.id}] (${requirement.kind}) ${requirement.statement}${cites ? `\n    cites: ${cites}` : ''}`;
+        return `- ${marker(requirement)} (${requirement.kind}) ${requirement.statement}${cites ? `\n    cites: ${cites}` : ''}`;
       }),
     ),
     section(
-      'Constraints',
-      understanding.constraints.map((c) => `- [${c.id}] (${c.category}) ${c.statement}`),
+      'Open constraints',
+      understanding.constraints.map((c) => `- ${marker(c)} (${c.category}) ${c.statement}`),
     ),
     section(
-      'Assumptions',
+      'Open assumptions',
       understanding.assumptions.map(
-        (a) => `- [${a.id}] (${a.risk} risk) ${a.statement} — ${a.basis}`,
+        (a) => `- ${marker(a)} (${a.risk} risk) ${a.statement} — ${a.basis}`,
       ),
     ),
     section(
-      'Contradictions',
-      understanding.contradictions.map((c) => `- [${c.id}] ${c.description}`),
-    ),
-    section(
-      'Open gaps',
-      understanding.gaps.map(
-        (g) =>
-          `- [${g.id}] ${g.dimension}/${g.topic}${g.blocking ? ' BLOCKING' : ''} (${g.impact} impact): ${g.description}`,
-      ),
-    ),
-    section(
-      'Already resolved',
-      understanding.resolvedGaps.map((g) => `- [${g.id}] ${g.topic}: ${g.resolution}`),
+      'Open contradictions',
+      understanding.contradictions.map((c) => `- ${marker(c)} ${c.description}`),
     ),
   ]);
 }
 
 /**
- * Statements and IDs only — no provenance, no rationale, no resolved history.
+ * Statements and IDs only — no provenance, no rationale, no decision history.
  *
  * `assess` scores coverage; it does not need citations to judge whether a
  * dimension is understood. Dropping them is the cheapest available token saving
@@ -126,26 +135,26 @@ export function compactUnderstanding(understanding: Understanding): string {
       ].filter((l) => l.length > 0),
     ),
     section(
-      'Requirements',
-      understanding.requirements.map((r) => `- [${r.id}] (${r.kind}) ${r.statement}`),
-    ),
-    section(
-      'Constraints',
-      understanding.constraints.map((c) => `- [${c.id}] ${c.statement}`),
-    ),
-    section(
-      'Assumptions',
-      understanding.assumptions.map((a) => `- [${a.id}] ${a.statement}`),
-    ),
-    section(
-      'Contradictions',
-      understanding.contradictions.map((c) => `- [${c.id}] ${c.description}`),
-    ),
-    section(
-      'Open gaps',
-      understanding.gaps.map(
-        (g) => `- [${g.id}] ${g.dimension}/${g.topic}${g.blocking ? ' BLOCKING' : ''}`,
+      'Settled decisions',
+      currentDecisions(understanding).map(
+        (d) => `- [${d.id}] (${d.kind}/${d.dimension}) ${d.statement}`,
       ),
+    ),
+    section(
+      'Open requirements',
+      understanding.requirements.map((r) => `- ${marker(r)} (${r.kind}) ${r.statement}`),
+    ),
+    section(
+      'Open constraints',
+      understanding.constraints.map((c) => `- ${marker(c)} ${c.statement}`),
+    ),
+    section(
+      'Open assumptions',
+      understanding.assumptions.map((a) => `- ${marker(a)} ${a.statement}`),
+    ),
+    section(
+      'Open contradictions',
+      understanding.contradictions.map((c) => `- ${marker(c)} ${c.description}`),
     ),
   ]);
 }
@@ -183,18 +192,29 @@ export function buildQuestionsInput(
   const weakest =
     verdict.shortfalls.length > 0
       ? `Weakest dimensions, worst first: ${verdict.shortfalls.join(', ')}.`
-      : 'No dimension is below the bar; target the blocking gaps.';
+      : 'No dimension is below the bar; target the blocking open items.';
 
-  // Only open gaps are sent: a question must target a gap that exists, and
-  // sending resolved ones invites the model to re-ask a settled question.
-  const gaps = section(
-    'Open gaps you may target',
-    understanding.gaps.map((g) => `- [${g.id}] ${g.dimension}/${g.topic}: ${g.description}`),
+  // Only *open* items are sent. Settled decisions are omitted on purpose: sending
+  // them invites the model to re-ask something already answered, and a question
+  // that reopens a decision costs a slot from a finite budget to learn nothing.
+  //
+  // Note there is no equivalent of the old "you must target one of these" rule.
+  // A question may name no item at all, because an absence has no entity — it is
+  // a dimension with nothing behind it, and that is the most valuable thing to
+  // ask about on turn one.
+  const items = section(
+    'Open items you may target',
+    openItems(understanding).map((item) => `- ${marker(item)} ${statementOf(item)}`),
   );
 
   return join([
     `# Why we are not finished\n${verdict.rationale}\n${weakest}`,
-    gaps,
+    items,
     `Ask at most ${maxQuestions} questions. Most important first.`,
   ]);
+}
+
+/** The one human-readable line an open item has, whichever collection it came from. */
+function statementOf(item: OpenItem): string {
+  return 'statement' in item ? item.statement : item.description;
 }

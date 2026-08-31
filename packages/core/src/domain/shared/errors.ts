@@ -55,6 +55,30 @@ export class DuplicateIdError extends DomainError {
   }
 }
 
+/**
+ * A promoted or added Decision named nothing that settled it.
+ *
+ * Distinct from `UnknownReferenceError`, which means a reference pointed at
+ * something absent. This one means there was no reference at all — the model
+ * asserted a decision without saying what made it one. Every Decision must trace
+ * back to an Answer or a Source, because that trail is the only thing separating
+ * a decision from an opinion.
+ */
+export class UnsettledDecisionError extends DomainError {
+  readonly statement: string;
+  readonly promotedFrom: string | null;
+
+  constructor(statement: string, promotedFrom: string | null) {
+    super(
+      'UNSETTLED_DECISION',
+      `A decision must name what settled it — an answered question or a cited source. ` +
+        `Neither was supplied for ${promotedFrom === null ? 'a new decision' : `the promotion of ${promotedFrom}`}: "${statement}".`,
+    );
+    this.statement = statement;
+    this.promotedFrom = promotedFrom;
+  }
+}
+
 export class InvalidAnswerError extends DomainError {
   readonly reason: string;
 

@@ -6,8 +6,8 @@ export interface SufficiencyPolicy {
   readonly minimumCoverage: number;
   /**
    * Dimensions that must clear the bar. The others are still scored and still
-   * generate gaps — they simply do not block finalizing, because demanding full
-   * coverage of every dimension makes the loop ask questions forever.
+   * attract questions — they simply do not block finalizing, because demanding
+   * full coverage of every dimension makes the loop ask questions forever.
    */
   readonly requiredDimensions: readonly CoverageDimension[];
 }
@@ -25,7 +25,7 @@ export interface InquiryProgress {
 /**
  * Turns a model's assessment into a decision.
  *
- * The model supplies evidence — per-dimension scores and blocking gaps — and
+ * The model supplies evidence — per-dimension scores and blocking items — and
  * this function applies the policy. That split is what makes the threshold a
  * tunable number rather than a phrase buried in a prompt, and what makes "why
  * isn't this sufficient yet?" answerable from stored data alone.
@@ -48,8 +48,8 @@ export function decideSufficiency(
     .filter((entry) => entry.score < policy.minimumCoverage)
     .sort((a, b) => a.score - b.score);
 
-  const blockingGapIds = assessment.blockingGapIds;
-  const sufficient = shortfalls.length === 0 && blockingGapIds.length === 0;
+  const blockingItemIds = assessment.blockingItemIds;
+  const sufficient = shortfalls.length === 0 && blockingItemIds.length === 0;
   const budgetExhausted = progress.questionsAsked >= progress.questionBudget;
 
   const bar = policy.minimumCoverage.toFixed(2);
@@ -60,14 +60,14 @@ export function decideSufficiency(
       .join(', ');
     reasons.push(`coverage below the ${bar} bar for: ${detail}`);
   }
-  if (blockingGapIds.length > 0) {
+  if (blockingItemIds.length > 0) {
     reasons.push(
-      `${blockingGapIds.length} blocking gap${blockingGapIds.length === 1 ? '' : 's'} unresolved`,
+      `${blockingItemIds.length} blocking open item${blockingItemIds.length === 1 ? '' : 's'} unsettled`,
     );
   }
 
   const rationale = sufficient
-    ? `Every required dimension meets the ${bar} coverage bar and no blocking gaps remain.`
+    ? `Every required dimension meets the ${bar} coverage bar and no blocking items remain open.`
     : `Not yet sufficient: ${reasons.join('; ')}.`;
 
   return SufficiencyVerdict.parse({
@@ -75,7 +75,7 @@ export function decideSufficiency(
     rationale,
     coverage: assessment.coverage,
     shortfalls: shortfalls.map((entry) => entry.dimension),
-    blockingGapIds,
+    blockingItemIds,
     questionsAsked: progress.questionsAsked,
     questionBudget: progress.questionBudget,
     budgetExhausted,

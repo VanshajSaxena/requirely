@@ -1,13 +1,14 @@
 import type {
   ConstraintCategory,
   CoverageDimension,
+  DecisionKind,
   Priority,
   RequirementKind,
   RiskLevel,
 } from '../domain/index.ts';
 
 /**
- * Stored ids become document labels: `req-1` → `REQ-1`, `gap-3` → `GAP-3`.
+ * Stored ids become document labels: `req-1` → `REQ-1`, `dec-3` → `DEC-3`.
  *
  * This file is where Phase 3b pays off. Ids inside an `Understanding` are
  * document-scoped and sequential precisely because nothing about them needed to
@@ -30,6 +31,15 @@ export const REQUIREMENT_KIND: Record<RequirementKind, string> = {
   'non-functional': 'Non-functional',
   behavioural: 'Behavioural',
   acceptance: 'Acceptance',
+};
+
+export const DECISION_KIND: Record<DecisionKind, string> = {
+  functional: 'Functional',
+  'non-functional': 'Non-functional',
+  behavioural: 'Behavioural',
+  acceptance: 'Acceptance',
+  constraint: 'Constraint',
+  scope: 'Scope',
 };
 
 export const CONSTRAINT_CATEGORY: Record<ConstraintCategory, string> = {

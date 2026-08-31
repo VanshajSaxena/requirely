@@ -10,11 +10,11 @@ import { DEFAULT_SUFFICIENCY_POLICY, decideSufficiency, type SufficiencyPolicy }
 const assess = (
   score: number,
   overrides: Partial<Record<CoverageDimension, number>> = {},
-  blockingGapIds: string[] = [],
+  blockingItemIds: string[] = [],
 ) =>
   UnderstandingAssessment.parse({
     summary: 'assessment',
-    blockingGapIds,
+    blockingItemIds,
     coverage: ALL_COVERAGE_DIMENSIONS.map((dimension) => ({
       dimension,
       score: overrides[dimension] ?? score,
@@ -73,16 +73,23 @@ describe('decideSufficiency', () => {
     expect(verdict.shortfalls).toEqual(['acceptance', 'constraints', 'core-behaviour']);
   });
 
-  it('lets a single blocking gap veto otherwise perfect coverage', () => {
+  it('lets a single blocking open item veto otherwise perfect coverage', () => {
     const verdict = decideSufficiency(
-      assess(1, {}, ['gap-1']),
+      assess(1, {}, ['req-1']),
       DEFAULT_SUFFICIENCY_POLICY,
       progress,
     );
 
     expect(verdict.sufficient).toBe(false);
     expect(verdict.shortfalls).toEqual([]);
-    expect(verdict.rationale).toContain('1 blocking gap unresolved');
+    expect(verdict.rationale).toContain('1 blocking open item unsettled');
+  });
+
+  it('rejects a blocking id that is not shaped like an open item', () => {
+    // The prefix refine on `OpenItemId` is the only structural check available
+    // here — the assessment cannot see the understanding — and without it a
+    // `qst-1` or a stray UUID would sail through and veto sufficiency forever.
+    expect(() => assess(1, {}, ['dec-1'])).toThrow();
   });
 
   it('keeps budget exhaustion independent of sufficiency', () => {

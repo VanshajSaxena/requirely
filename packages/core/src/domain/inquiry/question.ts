@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { GapId, OptionId, QuestionId, SessionId, TurnId } from '../shared/ids.ts';
+import { OpenItemId, OptionId, QuestionId, SessionId, TurnId } from '../shared/ids.ts';
 import { Timestamp } from '../shared/time.ts';
+import { CoverageDimension } from '../sufficiency/coverage.ts';
 
 /** Some questions admit exactly one answer, others several. Both are required by the spec. */
 export const AnswerMode = z.enum(['single', 'multiple']);
@@ -35,8 +36,24 @@ export const Question = z.object({
   id: QuestionId,
   sessionId: SessionId,
   turnId: TurnId,
-  /** Every question exists to close a specific gap — no gap, no question. */
-  gapId: GapId,
+  /**
+   * Which part of the coverage picture this question serves.
+   *
+   * Replaces `gapId`, and the change is not a rename. A question used to require
+   * a `Gap` entity to point at, which meant the model had to invent a gap before
+   * it could ask about an absence. A dimension is always available, so "nobody
+   * has said how success is measured" needs no placeholder entity — and question
+   * ordering already ran off `verdict.shortfalls`, which is dimension-shaped.
+   */
+  dimension: CoverageDimension,
+  /**
+   * The specific open item this question would settle, when there is one.
+   *
+   * Null for a question about an absence. When non-null and the question is
+   * answered, the engine derives `Decision.settledBy` from it — which is what
+   * keeps a 40-character `AnswerId` off the wire.
+   */
+  about: OpenItemId.nullable().default(null),
   text: z.string().min(1),
   mode: AnswerMode,
   options: optionListRule(QuestionOption),

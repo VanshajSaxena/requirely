@@ -89,9 +89,15 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 
 ## 3. Status
 
-**Done:** phases 0–6. Only the CLI remains.
-**184 tests, 18 files.** `pnpm verify` covers typecheck (3 packages) + lint +
+**Done:** phases 0–6, Phase 7 steps 0–1, Phase 8 step 1.
+**208 tests, 22 files.** `pnpm verify` covers typecheck (3 packages) + lint +
 2 boundary scripts + node-runnable + tests.
+
+**Phase 7 is parked mid-flight and Phase 8 is in progress.** The first live model
+calls exposed a constraint nobody had designed for: providers compile strict
+schemas into decoding grammars and cap their branchiness, and ours was 3× over.
+Phase 8 is the redesign that follows. Phase 7 steps 2–4 (the `./server` export,
+`apps/cli`, the self-gathering run) resume once it lands.
 
 | Phase | State |
 | --- | --- |
@@ -104,7 +110,10 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 | 4 Real AI adapters | code done; **one real run per provider still pending** |
 | 5 Ingestion (text, PDF, DOCX, audio) | done — **code ingestion deliberately deferred** |
 | 6 Projections (SRS, req doc, agent prompt) | done |
-| **7 CLI** | **next — the last phase** |
+| 7 CLI — steps 0/1 | done: adapter fixes, cost accounting, the live harness, the first real call |
+| 7 CLI — steps 2–4 | **parked** behind Phase 8 |
+| 8 Harness redesign — step 1 (domain) | **done** — `Decision` tier, promotion, `Gap` deleted |
+| **8 steps 2–6** | **next** — wire+codec · adapters · engine · projections · evals |
 
 ### What Phase 5 added
 
@@ -129,9 +138,9 @@ in the enum; nothing produces it.
   no I/O, no tokens. Invariant #1 made executable.
 - `finalizeSession` in `domain/session/` — the explicit act of finishing, kept
   separate because projections mutate nothing.
-- Honesty is uniform: open gaps and unresolved contradictions render whenever
+- Honesty is uniform: still-open items and unresolved contradictions render whenever
   they exist, not only when the budget ran out.
-- The agent prompt renders open gaps as **"STOP — do not guess, ask"**, which is
+- The agent prompt renders still-open items as **"STOP — do not guess, ask"**, which is
   the product's own thesis applied to its own output.
 
 ### What Phase 4 added
@@ -146,20 +155,46 @@ in the enum; nothing produces it.
   CI replays real model output with no network and no spend.
 - `observability/logger.ts` — minimal `Logger`, silent by default.
 
+### What Phase 8 step 1 changed
+
+The domain grew a settled tier and lost `Gap`. See DECISIONS.md for the reasoning;
+the shape, briefly:
+
+- **`Decision`** — `statement · kind · dimension · rationale · promotedFrom ·
+  settledBy · supersededBy · provenance`. Immutable; replaced by supersession.
+- **Promotion** — `decisions.promote` names an open item in `from`, creates the
+  Decision and removes the item in one operation. Validated, not asserted:
+  `applyDelta` throws when `from` names nothing, when the same item is promoted
+  twice, when a cited source does not exist, or when nothing settled the decision
+  at all.
+- **`Gap`, `ResolvedGap`, `GapId` and `Contradiction.resolution` are gone.**
+  `Question.gapId` became `dimension` + `about`, and the "must target an open gap"
+  filter in `selectQuestions` was **deleted rather than ported** — that filter is
+  what made a turn-one absence unaskable.
+- **`OpenItemId`** is a brand supertype of the four item brands, expressible
+  because Zod brands intersect. Widening is free; every narrowing is still an error.
+
+**Honest note on the numbers.** Step 1 makes the wire problem *worse*, measured:
+`UnderstandingDelta` at `io: 'input'` went from 71 optional / 28 union to
+**84 / 34**, against caps of 24 and 16. That is expected — the domain delta was
+never meant to be sendable, and Step 2 introduces `src/wire/` plus a codec so the
+model never sees a domain schema. `Understanding` at `io: 'output'` remains
+**0 optional / 20 union**, so the "nullable, not optional" convention survived.
+
+**Cassettes were deleted, not re-recorded.** The Phase 7 recordings were made
+against the old schema; the org API spend limit blocks re-recording. `live.test.ts`
+now skips loudly, which is the documented behaviour — see WEAKNESSES.md for why
+the skip guard did not catch the orphaning itself.
+
 ### The immediate next step
 
-**Run each provider once for real.** Nothing has yet touched a live model. Needs
-`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`. Record and report:
+**Phase 8 step 2 — `src/wire/` and the codec.** A flat op list, sentinel-encoded,
+measured at 0 optional / 4 union / 1.7 KB, with `z.codec` giving the wire schema,
+the domain type, a total `decode` and an `encode` that makes drift a CI failure.
 
-- what a turn actually costs,
-- whether the `effort` mapping behaves sensibly,
-- **how often output fails schema validation** — the retry decorator logs every
-  attempt, and folds each wasted attempt's tokens into the usage it returns, so a
-  retried turn reports what it really cost.
-
-Then **Phase 7, the CLI** — the last phase. It stays small and interactive: a
-playground for exercising the engine, not a surface to invest in. It will force
-the `./server` export question below.
+Still outstanding from Phase 7 and blocked on API spend: **one real run per
+provider**, reporting cost per turn, whether the `effort` mapping behaves
+sensibly, and how often output fails schema validation.
 
 ---
 
@@ -167,7 +202,7 @@ the `./server` export question below.
 
 - **Phase 6 projections render deterministically** — pure functions over
   `UnderstandingRevision`, no model call. `req-1` renders as `REQ-1`: the stored
-  id *is* the citation number. An `exhausted` session renders a "Known gaps and
+  id *is* the citation number. An `exhausted` session renders a "still open and
   assumptions" section so an under-informed document says so.
 - **Phase 7's CLI stays small and interactive.** It is a *playground*, not the
   product — a way to exercise the engine, not a surface to invest in.

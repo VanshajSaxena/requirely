@@ -55,47 +55,70 @@ const FULL = {
     purpose: 'Turn raw context into a buildable specification.',
     users: [{ label: 'Product managers', description: 'Write specs', needs: ['fewer rounds'] }],
   },
-  requirements: [
+  // Settled — this is what the body of every document is built from.
+  decisions: [
     {
-      id: 'req-1',
+      id: 'dec-1',
       statement: 'Users sign in via SSO',
       kind: 'functional',
-      priority: 'must',
+      dimension: 'core-behaviour',
+      rationale: 'Okta is already the org identity provider.',
+      promotedFrom: 'req-9',
+      settledBy: 'ans-1',
       provenance: [{ sourceId: 'src-1' }],
     },
-    { id: 'req-2', statement: 'p95 under 200ms', kind: 'non-functional' },
-    { id: 'req-3', statement: 'A spec builds unaided', kind: 'acceptance' },
+    {
+      id: 'dec-2',
+      statement: 'p95 under 200ms',
+      kind: 'non-functional',
+      dimension: 'core-behaviour',
+      rationale: 'Chosen over p99, which nobody measures today.',
+      settledBy: 'src-1',
+    },
+    {
+      id: 'dec-3',
+      statement: 'Must run on-premise',
+      kind: 'constraint',
+      dimension: 'constraints',
+      rationale: 'Regulatory; cloud was ruled out.',
+      settledBy: 'src-1',
+    },
+    {
+      id: 'dec-4',
+      statement: 'Product managers and founders are the audience',
+      kind: 'scope',
+      dimension: 'users',
+      rationale: 'Engineers were offered and not chosen.',
+      promotedFrom: 'req-8',
+      settledBy: 'ans-2',
+    },
   ],
-  constraints: [{ id: 'con-1', statement: 'Must run on-premise', category: 'technical' }],
+  // Still open — Appendix A, and the agent prompt's STOP section.
+  requirements: [
+    {
+      id: 'req-3',
+      statement: 'Nothing states how anyone would know this worked',
+      kind: 'acceptance',
+      dimension: 'acceptance',
+      blocking: true,
+    },
+  ],
+  constraints: [],
   assumptions: [
-    { id: 'asm-1', statement: 'English only at launch', basis: 'no locale mentioned', risk: 'low' },
+    {
+      id: 'asm-1',
+      statement: 'English only at launch',
+      basis: 'no locale mentioned',
+      risk: 'low',
+      dimension: 'edge-cases',
+    },
   ],
   contradictions: [
     {
       id: 'ctr-1',
       description: 'Retention stated as both 30 and 90 days',
       between: [{ sourceId: 'src-1' }, { sourceId: 'src-2' }],
-    },
-  ],
-  gaps: [
-    {
-      id: 'gap-3',
-      dimension: 'acceptance',
-      topic: 'done criteria',
-      description: 'Nothing states how anyone would know this worked.',
-      blocking: true,
-      impact: 'high',
-    },
-  ],
-  resolvedGaps: [
-    {
-      id: 'gap-1',
-      dimension: 'users',
-      topic: 'audience',
-      description: 'unknown',
-      blocking: false,
-      impact: 'medium',
-      resolution: 'Product managers and founders.',
+      dimension: 'data',
     },
   ],
 };
@@ -110,10 +133,9 @@ describe('labels — the Phase 3b payoff', () => {
   it('uses the stored id as the citation number, with no mapping table', () => {
     const srs = project('srs', input());
 
-    expect(srs).toContain('**REQ-1**');
-    expect(srs).toContain('**CON-1**');
+    expect(srs).toContain('**DEC-1**');
     expect(srs).toContain('**ASM-1**');
-    expect(srs).toContain('**GAP-3**');
+    expect(srs).toContain('**REQ-3**');
   });
 });
 
@@ -123,13 +145,8 @@ describe('citations', () => {
     // specification would make a fabrication look authoritative.
     const withQuote = {
       ...FULL,
-      requirements: [
-        {
-          id: 'req-1',
-          statement: 'Users sign in via SSO',
-          kind: 'functional',
-          provenance: [{ sourceId: 'src-1', quote: 'we use Okta' }],
-        },
+      decisions: [
+        { ...FULL.decisions[0], provenance: [{ sourceId: 'src-1', quote: 'we use Okta' }] },
       ],
     };
     const srs = project('srs', input(withQuote));
@@ -141,18 +158,11 @@ describe('citations', () => {
   it('drops a citation naming a source that does not exist, rather than throwing', () => {
     const ghost = {
       ...FULL,
-      requirements: [
-        {
-          id: 'req-1',
-          statement: 'Users sign in via SSO',
-          kind: 'functional',
-          provenance: [{ sourceId: 'src-99' }],
-        },
-      ],
+      decisions: [{ ...FULL.decisions[0], provenance: [{ sourceId: 'src-99' }] }],
     };
 
     const srs = project('srs', input(ghost));
-    expect(srs).toContain('REQ-1');
+    expect(srs).toContain('DEC-1');
     expect(srs).not.toContain('src-99');
   });
 });
@@ -172,7 +182,12 @@ describe('SRS', () => {
   it('omits a section the understanding carries no data for', () => {
     // The whole reason for choosing "standard headings, empty sections omitted":
     // a thin understanding should be short, not a wall of TBD.
-    const thin = { ...FULL, constraints: [], assumptions: [], product: { name: 'X' } };
+    const thin = {
+      ...FULL,
+      decisions: FULL.decisions.filter((d) => d.kind !== 'constraint'),
+      assumptions: [],
+      product: { name: 'X' },
+    };
     const srs = project('srs', input(thin));
 
     expect(srs).not.toContain('2.4 Constraints');
@@ -181,8 +196,10 @@ describe('SRS', () => {
   });
 
   it('omits a parent heading when every child section is empty', () => {
-    const noRequirements = { ...FULL, requirements: [] };
-    expect(project('srs', input(noRequirements))).not.toContain('3. Specific requirements');
+    // Section 3 is built entirely from decisions, so an understanding that has
+    // settled nothing renders no requirements chapter at all — the honest shape.
+    const nothingSettled = { ...FULL, decisions: [] };
+    expect(project('srs', input(nothingSettled))).not.toContain('3. Specific requirements');
   });
 
   it('names the revision it was generated from', () => {
@@ -191,14 +208,14 @@ describe('SRS', () => {
 });
 
 describe('honesty appendices — rendered whenever there is something to admit', () => {
-  it('renders open gaps even when the session reached `sufficient`', () => {
-    // `sufficient` means every *required* dimension cleared the bar; gaps in
+  it('renders still-open items even when the session reached `sufficient`', () => {
+    // `sufficient` means every *required* dimension cleared the bar; items in
     // other dimensions can still be open, and hiding them would make the most
     // confident-looking document the least honest one.
     const srs = project('srs', input(FULL, { status: 'sufficient' }));
 
-    expect(srs).toContain('Appendix A — Known gaps');
-    expect(srs).toContain('done criteria');
+    expect(srs).toContain('Appendix A — Still open');
+    expect(srs).toContain('how anyone would know this worked');
     expect(srs).toContain('blocking');
   });
 
@@ -212,10 +229,10 @@ describe('honesty appendices — rendered whenever there is something to admit',
     expect(srs).toContain('Appendix C — Unresolved contradictions');
     expect(srs).toContain('Retention stated as both 30 and 90 days');
 
-    const settled = {
-      ...FULL,
-      contradictions: [{ ...FULL.contradictions[0], resolution: '30 days, confirmed' }],
-    };
+    // A settled contradiction has been *promoted*, so it has left the array
+    // entirely. There is no "resolved but still listed" state to test for —
+    // deleting `Contradiction.resolution` is what removed it.
+    const settled = { ...FULL, contradictions: [] };
     expect(project('srs', input(settled))).not.toContain('Appendix C');
   });
 
@@ -244,8 +261,8 @@ describe('requirements document', () => {
     expect(doc).toContain('## The problem');
     expect(doc).toContain('## Who it serves');
     // Process provenance a reviewer wants and a builder does not.
-    expect(doc).toContain('Appendix D — What was asked');
-    expect(doc).toContain('Product managers and founders.');
+    expect(doc).toContain('Appendix D — What was decided');
+    expect(doc).toContain('settled by: ans-2');
   });
 
   it('frames assumptions as decisions someone should confirm', () => {
@@ -253,19 +270,33 @@ describe('requirements document', () => {
   });
 
   it('does not carry the process appendix into the SRS', () => {
-    expect(project('srs', input())).not.toContain('What was asked');
+    expect(project('srs', input())).not.toContain('What was decided, and what settled it');
   });
 });
 
 describe('agent prompt', () => {
-  it('instructs the agent to stop rather than guess at an open gap', () => {
+  it('instructs the agent to stop rather than guess at something unsettled', () => {
     // The product's own thesis applied to its output: an agent guessing at an
     // unstated requirement is the failure Requirely exists to prevent.
     const prompt = project('agent-prompt', input());
 
     expect(prompt).toContain('STOP');
     expect(prompt).toContain('Do not guess');
-    expect(prompt).toContain('done criteria');
+    expect(prompt).toContain('how anyone would know this worked');
+  });
+
+  it('separates what to build from what to ask about', () => {
+    // The settled/open split does more work for an agent than for a human: a
+    // Decision is something to implement, an open item is something to raise.
+    // One heading covering both is how a proposal gets built by mistake.
+    const prompt = project('agent-prompt', input());
+    const decided = prompt.indexOf('What was decided');
+    const stop = prompt.indexOf('STOP');
+
+    expect(decided).toBeGreaterThan(-1);
+    expect(stop).toBeGreaterThan(decided);
+    expect(prompt.slice(decided, stop)).toContain('Users sign in via SSO');
+    expect(prompt.slice(decided, stop)).not.toContain('how anyone would know this worked');
   });
 
   it('states assumptions as inherited decisions, not background', () => {
@@ -281,11 +312,11 @@ describe('agent prompt', () => {
   });
 
   it('still warns against inventing requirements when nothing is outstanding', () => {
-    const closed = { ...FULL, gaps: [], contradictions: [] };
+    const closed = { ...FULL, requirements: [], assumptions: [], contradictions: [] };
     const prompt = project('agent-prompt', input(closed));
 
     expect(prompt).not.toContain('STOP');
-    expect(prompt).toContain('that is a gap that was missed');
+    expect(prompt).toContain('that is something the gathering missed');
   });
 });
 
@@ -300,7 +331,7 @@ describe('finalizeSession', () => {
     expect(finalized.updatedAt).toBe('2026-02-01T00:00:00.000Z');
   });
 
-  it('finalizes an exhausted session too — the document just states its gaps', () => {
+  it('finalizes an exhausted session too — the document just states what is open', () => {
     expect(finalizeSession(session({ status: 'exhausted' }), 'srs', ctx).status).toBe('finalized');
   });
 

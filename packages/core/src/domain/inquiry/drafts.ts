@@ -8,9 +8,9 @@ import { optionListRule, Question, QuestionOption } from './question.ts';
  * What a model may emit when asked for questions.
  *
  * Identity and time are stripped: `id`, `sessionId`, `turnId`, and `askedAt` are
- * the domain's to assign. `gapId` stays, because a question must point at a gap
- * that already exists — the model is choosing among known gaps, not inventing
- * one here.
+ * the domain's to assign. `dimension` and `about` stay: the model chooses which
+ * lens a question serves and, optionally, which existing open item it would
+ * settle. It is choosing among things that already exist, not inventing them.
  */
 
 export const QuestionOptionDraft = QuestionOption.omit({ id: true });

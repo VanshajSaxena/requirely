@@ -93,6 +93,20 @@ function hasCassettesFor(model: string): boolean {
   }
 }
 
+/**
+ * **This guard answers "was anything ever recorded?", not "is it still valid?"**
+ *
+ * The cassette key is a hash of `(operation, instructions, input)`, so changing a
+ * prompt or a schema does not invalidate a cassette — it *orphans* it, and the
+ * next replay throws `no cassette at …` from inside the run rather than skipping
+ * here. That happened for real when Phase 8 reshaped the domain: the Phase 7
+ * recordings were still present and still named the right model, so this returned
+ * true and the failure surfaced three calls deep.
+ *
+ * The fix when it happens is to delete the orphans, not to widen this check: a
+ * cassette recorded against a schema that no longer exists is evidence for a
+ * claim that is no longer being made. Deleting them makes the skip honest again.
+ */
 const RUNNABLE = LIVE || hasCassettesFor(MODEL);
 
 if (!RUNNABLE) {
@@ -199,8 +213,10 @@ describe.skipIf(!RUNNABLE)(`the engine against ${MODEL} (${LIVE ? 'RECORDING' : 
     expect(first.turn.index).toBe(first.revision.revision);
     const understanding = first.revision.content;
     expect(
-      understanding.requirements.length + understanding.gaps.length,
-      'the model produced neither a requirement nor a gap from a product brief',
+      understanding.requirements.length +
+        understanding.constraints.length +
+        understanding.decisions.length,
+      'the model produced nothing at all from a product brief',
     ).toBeGreaterThan(0);
     expect(['awaiting-answers', 'sufficient', 'exhausted']).toContain(first.session.status);
 
@@ -212,8 +228,9 @@ describe.skipIf(!RUNNABLE)(`the engine against ${MODEL} (${LIVE ? 'RECORDING' : 
     expect(cited.every((id) => id === source.id)).toBe(true);
 
     console.info(
-      `[live] turn 1: ${understanding.requirements.length} requirements, ` +
-        `${understanding.gaps.length} gaps, ${first.questions.length} questions, ` +
+      `[live] turn 1: ${understanding.decisions.length} decisions, ` +
+        `${understanding.requirements.length} open requirements, ` +
+        `${first.questions.length} questions, ` +
         `verdict sufficient=${first.turn.verdict.sufficient}`,
     );
 

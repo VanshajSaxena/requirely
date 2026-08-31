@@ -1,16 +1,11 @@
 import { z } from 'zod';
-import {
-  AssumptionId,
-  ConstraintId,
-  ContradictionId,
-  GapId,
-  RequirementId,
-} from '../shared/ids.ts';
+import { AssumptionId, ConstraintId, ContradictionId, RequirementId } from '../shared/ids.ts';
 import {
   AssumptionDraft,
   ConstraintDraft,
   ContradictionDraft,
-  GapDraft,
+  DecisionDraft,
+  PromotionDraft,
   RequirementDraft,
 } from './drafts.ts';
 import { ProductSummary } from './understanding.ts';
@@ -18,17 +13,23 @@ import { ProductSummary } from './understanding.ts';
 /**
  * What changed this turn — not the whole understanding rewritten.
  *
- * Regenerating the full document each turn loses requirement identity (so
- * nothing can be diffed and provenance cannot be traced), lets earlier details
- * silently drift as context grows, and costs tokens proportional to total size
- * on every iteration. A delta keeps IDs stable, makes each turn's effect
- * inspectable, and keeps per-turn cost flat.
+ * Regenerating the full document each turn loses item identity (so nothing can be
+ * diffed and provenance cannot be traced), lets earlier details silently drift as
+ * context grows, and costs tokens proportional to total size on every iteration.
+ * A delta keeps IDs stable, makes each turn's effect inspectable, and keeps
+ * per-turn cost flat.
  *
  * Every mutation carries a `reason`. That is what turns the revision history
  * into an explanation rather than a log.
+ *
+ * **This is the domain-facing delta, not the wire format.** The shape a model
+ * actually emits is a flat op list in `src/wire/`, decoded into this. Assembling
+ * a delta out of domain schemas is what made the emitted JSON Schema 71 optional
+ * properties deep and uncompilable as a decoding grammar; keeping the two apart
+ * is the whole point of the codec.
  */
 
-const removal = <T extends z.ZodType>(id: T) => z.object({ id, reason: z.string().min(1) });
+const retirement = <T extends z.ZodType>(id: T) => z.object({ id, reason: z.string().min(1) });
 
 type PatchShape<T extends z.ZodRawShape> = {
   [K in keyof T]: z.ZodOptional<T[K] extends z.ZodDefault<infer Inner> ? Inner : T[K]>;
@@ -73,69 +74,52 @@ export const ContradictionRevision = patchOf(ContradictionDraft).extend({
   id: ContradictionId,
   reason: z.string().min(1),
 });
-export const GapRevision = patchOf(GapDraft).extend({
-  id: GapId,
-  reason: z.string().min(1),
-});
 
 /**
- * Closing a gap is distinct from deleting one: it records what was learned.
+ * One uncertain collection's operations.
  *
- * No `resolvedByAnswerId` here. The engine derives it — a `Question` carries its
- * `gapId` and an `Answer` carries its `questionId` — so asking a model to
- * transcribe a 40-character id it can only get wrong adds risk and no
- * information. Removing a reference beats shortening one.
+ * `retire`, not `remove`: an item leaves this array for two different reasons —
+ * it was wrong, or it was promoted — and only the first is a retirement. Naming
+ * them apart is what keeps "we dropped it" distinguishable from "we settled it"
+ * in the audit trail.
  */
-export const GapResolution = z.object({
-  id: GapId,
-  resolution: z.string().min(1),
-});
-export type GapResolution = z.infer<typeof GapResolution>;
+const openItemOps = <D extends z.ZodType, R extends z.ZodType, I extends z.ZodType>(
+  draft: D,
+  revision: R,
+  id: I,
+) =>
+  z
+    .object({
+      add: z.array(draft).default([]),
+      revise: z.array(revision).default([]),
+      retire: z.array(retirement(id)).default([]),
+    })
+    .prefault({});
 
 export const UnderstandingDelta = z.object({
   /** Partial patch; omitted keys leave the existing value untouched. */
   product: patchOf(ProductSummary).nullable().default(null),
 
-  requirements: z
+  /**
+   * No `revise` and no `retire`.
+   *
+   * A Decision is immutable in the ADR sense: it is never edited to flip its
+   * content, and it is never deleted. Replacing one means adding another with
+   * `supersedes` set, after which `applyDelta` writes the forward pointer. The
+   * absence of those two arrays is what makes that unexpressible rather than
+   * merely discouraged.
+   */
+  decisions: z
     .object({
-      add: z.array(RequirementDraft).default([]),
-      revise: z.array(RequirementRevision).default([]),
-      remove: z.array(removal(RequirementId)).default([]),
+      add: z.array(DecisionDraft).default([]),
+      promote: z.array(PromotionDraft).default([]),
     })
     .prefault({}),
 
-  constraints: z
-    .object({
-      add: z.array(ConstraintDraft).default([]),
-      revise: z.array(ConstraintRevision).default([]),
-      remove: z.array(removal(ConstraintId)).default([]),
-    })
-    .prefault({}),
-
-  assumptions: z
-    .object({
-      add: z.array(AssumptionDraft).default([]),
-      revise: z.array(AssumptionRevision).default([]),
-      remove: z.array(removal(AssumptionId)).default([]),
-    })
-    .prefault({}),
-
-  contradictions: z
-    .object({
-      add: z.array(ContradictionDraft).default([]),
-      revise: z.array(ContradictionRevision).default([]),
-      remove: z.array(removal(ContradictionId)).default([]),
-    })
-    .prefault({}),
-
-  gaps: z
-    .object({
-      add: z.array(GapDraft).default([]),
-      revise: z.array(GapRevision).default([]),
-      remove: z.array(removal(GapId)).default([]),
-      resolve: z.array(GapResolution).default([]),
-    })
-    .prefault({}),
+  requirements: openItemOps(RequirementDraft, RequirementRevision, RequirementId),
+  constraints: openItemOps(ConstraintDraft, ConstraintRevision, ConstraintId),
+  assumptions: openItemOps(AssumptionDraft, AssumptionRevision, AssumptionId),
+  contradictions: openItemOps(ContradictionDraft, ContradictionRevision, ContradictionId),
 });
 export type UnderstandingDelta = z.infer<typeof UnderstandingDelta>;
 

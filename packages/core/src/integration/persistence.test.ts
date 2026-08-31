@@ -100,7 +100,8 @@ describe('the loop over Postgres', () => {
 
     // The understanding is read back from Postgres, not carried in a variable.
     const stored = await second.stores.understanding.findLatest(session.id);
-    expect(stored?.content.gaps).toHaveLength(2);
+    expect(stored?.content.requirements).toHaveLength(2);
+    expect(stored?.content.constraints).toHaveLength(1);
     expect(stored?.content.requirements[0]?.statement).toBe(
       'Ingest audio, text and documents into one understanding',
     );
@@ -116,11 +117,14 @@ describe('the loop over Postgres', () => {
 
     expect(turn2.session.status).toBe('sufficient');
     expect(turn2.revision.revision).toBe(1);
-    expect(turn2.revision.content.resolvedGaps).toHaveLength(2);
-    expect(turn2.revision.content.gaps).toHaveLength(0);
-    // Turn 1's requirement survived a full round-trip through JSONB.
-    expect(turn2.revision.content.requirements).toHaveLength(2);
+    expect(turn2.revision.content.decisions).toHaveLength(2);
+    expect(turn2.revision.content.constraints).toHaveLength(0);
+    // Turn 1's unpromoted requirement survived a full round-trip through JSONB.
+    expect(turn2.revision.content.requirements).toHaveLength(1);
     expect(turn2.revision.content.requirements[0]?.id).toBe('req-1');
+    // And so did the promotion lineage — `promotedFrom` is the only record that
+    // `dec-1` used to be `req-2`, so losing it in JSONB would lose the trail.
+    expect(turn2.revision.content.decisions[0]?.promotedFrom).toBe('req-2');
   });
 
   it('writes nothing when the turn fails, leaving the session resumable', async () => {

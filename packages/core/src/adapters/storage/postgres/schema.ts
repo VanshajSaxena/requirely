@@ -148,7 +148,9 @@ export const questions = pgTable('questions', {
     .notNull()
     .references(() => sessions.id, { onDelete: 'cascade' }),
   turnId: text('turn_id').notNull(),
-  gapId: text('gap_id').notNull(),
+  dimension: text('dimension').notNull(),
+  // Nullable: a question about an absence targets a dimension and no item.
+  about: text('about'),
   text: text('text').notNull(),
   mode: text('mode').notNull(),
   options: jsonb('options').$type<QuestionOption[]>().notNull(),

@@ -1,4 +1,5 @@
-import { byOrdinal, CONSTRAINT_CATEGORY, DIMENSION, label, RISK } from './labels.ts';
+import { currentDecisions, type OpenItem, openItems } from '../domain/index.ts';
+import { byOrdinal, DECISION_KIND, DIMENSION, label, RISK } from './labels.ts';
 import { blocks, bullet, lines, section } from './markdown.ts';
 import type { Projection } from './types.ts';
 
@@ -14,20 +15,31 @@ import type { Projection } from './types.ts';
  * - states assumptions as **decisions made on its behalf**, not as background.
  *   An assumption the agent does not know was an assumption is a requirement it
  *   will defend rather than question.
- * - renders open gaps as an **instruction to stop and ask**. This is the whole
- *   thesis of the product turned on its own output: an agent guessing at an
- *   unstated requirement is precisely the failure Requirely exists to prevent,
- *   and it would be absurd to hand one an under-specified brief.
+ * - renders **everything still open** as an instruction to stop and ask. This is
+ *   the whole thesis of the product turned on its own output: an agent guessing
+ *   at an unstated requirement is precisely the failure Requirely exists to
+ *   prevent, and it would be absurd to hand one an under-specified brief.
+ *
+ * The settled/open split does more work for this reader than for either human
+ * one. A `Decision` is something to implement; an open item is something to ask
+ * about. Handing an agent both under one heading is how a proposal gets built.
  */
 export const renderAgentPrompt: Projection = (input) => {
   const understanding = input.revision.content;
   const { product } = understanding;
   const name = product.name ?? input.session.title ?? 'this product';
 
-  const openGaps = [...understanding.gaps].sort(byOrdinal);
-  const unresolved = understanding.contradictions
-    .filter((contradiction) => contradiction.resolution === null)
+  const decisions = currentDecisions(understanding).sort(byOrdinal);
+  // Contradictions are pulled out separately because they need different wording
+  // — "the sources disagree" is a distinct instruction from "nobody said".
+  const open = openItems(understanding)
+    .filter((item) => !('between' in item))
     .sort(byOrdinal);
+  const unresolved = [...understanding.contradictions].sort(byOrdinal);
+  const nothingOutstanding = open.length === 0 && unresolved.length === 0;
+
+  const statementOf = (item: OpenItem): string =>
+    'statement' in item ? item.statement : item.description;
 
   return `${blocks([
     `You are implementing **${name}**.`,
@@ -58,27 +70,21 @@ export const renderAgentPrompt: Projection = (input) => {
     ),
 
     section(
-      'Requirements',
-      [...understanding.requirements]
-        .sort(byOrdinal)
-        .map((requirement) =>
+      'What was decided — build exactly this',
+      decisions
+        .filter((decision) => decision.kind !== 'constraint')
+        .map((decision) =>
           bullet(
-            `${label(requirement.id)} — ${requirement.statement}${
-              requirement.rationale === null ? '' : ` _(${requirement.rationale})_`
-            }`,
+            `${label(decision.id)} — ${decision.statement} _(${DECISION_KIND[decision.kind]}; ${decision.rationale})_`,
           ),
         ),
     ),
 
     section(
       'Constraints you must respect',
-      [...understanding.constraints]
-        .sort(byOrdinal)
-        .map((constraint) =>
-          bullet(
-            `${label(constraint.id)} — ${constraint.statement} _(${CONSTRAINT_CATEGORY[constraint.category]})_`,
-          ),
-        ),
+      decisions
+        .filter((decision) => decision.kind === 'constraint')
+        .map((decision) => bullet(`${label(decision.id)} — ${decision.statement}`)),
     ),
 
     understanding.assumptions.length === 0
@@ -102,19 +108,19 @@ export const renderAgentPrompt: Projection = (input) => {
     // The section that makes this a prompt rather than a document.
     section(
       'STOP — ask about these before implementing',
-      openGaps.length === 0 && unresolved.length === 0
+      nothingOutstanding
         ? ''
         : blocks([
             lines([
-              'The following are genuinely unknown. **Do not guess and do not pick a',
+              'The following were never settled. **Do not guess and do not pick a',
               'sensible default.** Ask, get an answer, then proceed — an implementation',
               'built on an invented requirement costs more to undo than to delay.',
             ]),
             lines([
-              ...openGaps.map((gap) =>
+              ...open.map((item) =>
                 bullet(
-                  `**${DIMENSION[gap.dimension]} / ${gap.topic}**: ${gap.description}${
-                    gap.blocking ? ' _(blocking)_' : ''
+                  `**${DIMENSION[item.dimension]}**: ${statementOf(item)}${
+                    item.blocking ? ' _(blocking)_' : ''
                   }`,
                 ),
               ),
@@ -127,10 +133,10 @@ export const renderAgentPrompt: Projection = (input) => {
           ]),
     ),
 
-    openGaps.length === 0 && unresolved.length === 0
+    nothingOutstanding
       ? section(
           'Nothing is outstanding',
-          'Every gap identified during gathering was closed. If you find yourself needing to invent a requirement, that is a gap that was missed — raise it rather than filling it in.',
+          'Everything raised during gathering was settled. If you find yourself needing to invent a requirement, that is something the gathering missed — raise it rather than filling it in.',
         )
       : '',
   ])}\n`;

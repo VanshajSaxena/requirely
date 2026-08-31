@@ -1,5 +1,5 @@
 {
-  "id": "86967ba3-c22f-44fb-958e-d6cf5ca3df63",
+  "id": "8dfb4e9d-8c12-43ff-bbe3-a0408fdf9766",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -85,11 +85,17 @@
           "primaryKey": false,
           "notNull": true
         },
-        "gap_id": {
-          "name": "gap_id",
+        "dimension": {
+          "name": "dimension",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "about": {
+          "name": "about",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "text": {
           "name": "text",

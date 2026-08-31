@@ -14,9 +14,14 @@ import type { StrategyName } from '../engine/strategies.ts';
  * *same* scenario — otherwise "it resumes correctly" and "it runs correctly"
  * would be claims about two different sessions.
  *
- * The fixtures reference ids like `gap-1` before they exist. That works because
- * the tests use a sequential id generator, which is itself only possible because
- * identity enters through a port.
+ * The fixtures reference ids like `req-1` before they exist. That works because
+ * `applyDelta` mints from the document's own counters, so the first requirement
+ * added on turn 1 is always `req-1` — no id generator involved.
+ *
+ * **The scenario's shape is the redesign in miniature.** Turn 1 proposes open
+ * items and asks about them; turn 2 promotes them to decisions using answers.
+ * A scenario that only ever added things would pass every test while never
+ * exercising the one transition the product exists to make.
  */
 
 export const AT = '2026-01-01T00:00:00.000Z';
@@ -38,40 +43,32 @@ export const TURN_1_DELTA = {
       {
         statement: 'Ingest audio, text and documents into one understanding',
         kind: 'functional',
+        dimension: 'core-behaviour',
         provenance: [{ sourceId: 'src-1', quote: 'dump everything you know' }],
+      },
+      {
+        statement: 'Produce something an engineer can act on',
+        kind: 'acceptance',
+        dimension: 'acceptance',
       },
     ],
   },
-  gaps: {
-    add: [
-      {
-        dimension: 'acceptance',
-        topic: 'done criteria',
-        description: 'Nothing states how anyone would know this worked.',
-        blocking: false,
-        impact: 'high',
-      },
-      {
-        dimension: 'users',
-        topic: 'audience',
-        description: 'Who this serves is unstated.',
-        blocking: false,
-        impact: 'medium',
-      },
-    ],
+  constraints: {
+    add: [{ statement: 'Serve product managers first', category: 'product', dimension: 'users' }],
   },
 };
 
 export const TURN_1_ASSESSMENT = {
   summary: 'Purpose is clear; audience and acceptance are not.',
-  blockingGapIds: [],
+  blockingItemIds: [],
   coverage: coverage(0.85, { acceptance: 0.2, users: 0.3 }),
 };
 
 export const TURN_1_QUESTIONS = {
   questions: [
     {
-      gapId: 'gap-1',
+      dimension: 'acceptance',
+      about: 'req-2',
       text: 'How would you know Requirely had worked?',
       mode: 'single',
       options: [
@@ -80,7 +77,8 @@ export const TURN_1_QUESTIONS = {
       ],
     },
     {
-      gapId: 'gap-2',
+      dimension: 'users',
+      about: 'con-1',
       text: 'Who is the primary user?',
       mode: 'multiple',
       options: [{ label: 'Product managers' }, { label: 'Engineers' }, { label: 'Founders' }],
@@ -88,30 +86,38 @@ export const TURN_1_QUESTIONS = {
   ],
 };
 
+/**
+ * Both answered items are promoted, which is what makes turn 2 a *settling* turn.
+ *
+ * Neither promotion sets `settledBySourceId`: the engine derives the answer from
+ * `Question.about`, so a fixture that spelled out an `AnswerId` would be testing
+ * a path production never takes.
+ */
 export const TURN_2_DELTA = {
-  requirements: {
-    add: [
+  decisions: {
+    promote: [
       {
-        statement: 'Produce a specification an engineer can build from unaided',
+        from: 'req-2',
+        statement: 'Success is a specification an engineer can build from unaided',
         kind: 'acceptance',
+        dimension: 'acceptance',
+        rationale:
+          'Chosen over "fewer clarification rounds", which measures the process not the output.',
       },
-    ],
-  },
-  gaps: {
-    resolve: [
       {
-        id: 'gap-1',
-        resolvedByAnswerId: 'ans-1',
-        resolution: 'A spec buildable without follow-up.',
+        from: 'con-1',
+        statement: 'Product managers and founders are the primary users',
+        kind: 'scope',
+        dimension: 'users',
+        rationale: 'Both were selected; engineers were offered and not chosen.',
       },
-      { id: 'gap-2', resolvedByAnswerId: 'ans-2', resolution: 'Product managers and founders.' },
     ],
   },
 };
 
 export const TURN_2_ASSESSMENT = {
   summary: 'Everything required is now covered.',
-  blockingGapIds: [],
+  blockingItemIds: [],
   coverage: coverage(0.9),
 };
 

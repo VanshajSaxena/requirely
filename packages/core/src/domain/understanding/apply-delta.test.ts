@@ -1,25 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { DuplicateIdError, UnknownReferenceError } from '../shared/errors.ts';
+import {
+  DuplicateIdError,
+  UnknownReferenceError,
+  UnsettledDecisionError,
+} from '../shared/errors.ts';
 import { AnswerId } from '../shared/ids.ts';
 import { applyDelta } from './apply-delta.ts';
 import { UnderstandingDelta } from './delta.ts';
-import { emptyUnderstanding, type Understanding } from './understanding.ts';
+import { currentDecisions, emptyUnderstanding, type Understanding } from './understanding.ts';
 
 const delta = (input: unknown): UnderstandingDelta => UnderstandingDelta.parse(input);
 
 const requirementDraft = (statement: string, overrides: Record<string, unknown> = {}) => ({
   statement,
   kind: 'functional',
+  dimension: 'core-behaviour',
   provenance: [{ sourceId: 'src-1', quote: 'from the transcript' }],
   ...overrides,
 });
 
-const gapDraft = (topic: string, overrides: Record<string, unknown> = {}) => ({
-  dimension: 'acceptance',
-  topic,
-  description: `We do not know about ${topic}.`,
-  blocking: true,
-  impact: 'high',
+const constraintDraft = (statement: string, overrides: Record<string, unknown> = {}) => ({
+  statement,
+  category: 'technical',
+  dimension: 'constraints',
+  ...overrides,
+});
+
+const decisionDraft = (statement: string, overrides: Record<string, unknown> = {}) => ({
+  statement,
+  kind: 'functional',
+  dimension: 'core-behaviour',
+  rationale: 'chosen over the alternatives',
   ...overrides,
 });
 
@@ -29,7 +40,7 @@ function seeded(): Understanding {
     emptyUnderstanding(),
     delta({
       requirements: { add: [requirementDraft('Users sign in via SSO')] },
-      gaps: { add: [gapDraft('sign-out behaviour')] },
+      constraints: { add: [constraintDraft('Must run on Postgres')] },
     }),
   );
 }
@@ -41,7 +52,7 @@ describe('applyDelta — additions', () => {
     expect(result.requirements).toHaveLength(1);
     expect(result.requirements[0]?.id).toBe('req-1');
     expect(result.requirements[0]?.statement).toBe('Users sign in via SSO');
-    expect(result.gaps[0]?.id).toBe('gap-1');
+    expect(result.constraints[0]?.id).toBe('con-1');
   });
 
   it('treats an empty delta as the identity function', () => {
@@ -113,7 +124,7 @@ describe('applyDelta — revisions', () => {
     expect(turn2.nextIds.requirement).toBe(3);
   });
 
-  it('never reissues the id of something that was removed', () => {
+  it('never reissues the id of something that was retired', () => {
     // `max + 1` would hand out `req-1` again here. A Question from an earlier
     // turn still storing that id would silently repoint at a different entity.
     const seededOnce = applyDelta(
@@ -122,7 +133,7 @@ describe('applyDelta — revisions', () => {
     );
     const emptied = applyDelta(
       seededOnce,
-      delta({ requirements: { remove: [{ id: 'req-1', reason: 'contradicted' }] } }),
+      delta({ requirements: { retire: [{ id: 'req-1', reason: 'contradicted' }] } }),
     );
     const refilled = applyDelta(
       emptied,
@@ -138,12 +149,12 @@ describe('applyDelta — revisions', () => {
       emptyUnderstanding(),
       delta({
         requirements: { add: [requirementDraft('A'), requirementDraft('B')] },
-        gaps: { add: [gapDraft('audience')] },
+        constraints: { add: [constraintDraft('C')] },
       }),
     );
 
     expect(result.requirements.map((r) => r.id)).toEqual(['req-1', 'req-2']);
-    expect(result.gaps.map((g) => g.id)).toEqual(['gap-1']);
+    expect(result.constraints.map((c) => c.id)).toEqual(['con-1']);
   });
 
   it('rejects a document whose counter disagrees with its contents', () => {
@@ -160,11 +171,11 @@ describe('applyDelta — revisions', () => {
   });
 });
 
-describe('applyDelta — removals and unknown references', () => {
-  it('removes an entry', () => {
+describe('applyDelta — retirements and unknown references', () => {
+  it('retires an entry', () => {
     const after = applyDelta(
       seeded(),
-      delta({ requirements: { remove: [{ id: 'req-1', reason: 'contradicted by Q2' }] } }),
+      delta({ requirements: { retire: [{ id: 'req-1', reason: 'contradicted by Q2' }] } }),
     );
     expect(after.requirements).toHaveLength(0);
   });
@@ -184,7 +195,7 @@ describe('applyDelta — removals and unknown references', () => {
         seeded(),
         delta({
           requirements: {
-            remove: [
+            retire: [
               { id: 'req-98', reason: 'nope' },
               { id: 'req-99', reason: 'nope' },
             ],
@@ -214,66 +225,210 @@ describe('applyDelta — removals and unknown references', () => {
   });
 });
 
-describe('applyDelta — gap resolution', () => {
-  it('moves a resolved gap out of gaps and records what was learned', () => {
+describe('applyDelta — promotion', () => {
+  it('moves an open item into decisions and removes it from its collection', () => {
     // The answer id comes from the caller's derived map, not from the delta —
     // the model is never asked to transcribe it.
     const after = applyDelta(
       seeded(),
       delta({
-        gaps: {
-          resolve: [{ id: 'gap-1', resolution: 'Sessions end after 30 days of inactivity.' }],
+        decisions: {
+          promote: [{ from: 'req-1', ...decisionDraft('Users sign in via SSO, using Okta') }],
         },
       }),
-      { resolvedBy: new Map([['gap-1', AnswerId.parse('ans-1')]]) },
+      { settledBy: new Map([['req-1', AnswerId.parse('ans-1')]]) },
     );
 
-    expect(after.gaps).toHaveLength(0);
-    expect(after.resolvedGaps).toHaveLength(1);
-    expect(after.resolvedGaps[0]?.id).toBe('gap-1');
-    expect(after.resolvedGaps[0]?.resolvedByAnswerId).toBe('ans-1');
-    expect(after.resolvedGaps[0]?.topic).toBe('sign-out behaviour');
+    expect(after.requirements).toHaveLength(0);
+    expect(after.decisions).toHaveLength(1);
+    expect(after.decisions[0]?.id).toBe('dec-1');
+    expect(after.decisions[0]?.promotedFrom).toBe('req-1');
+    expect(after.decisions[0]?.settledBy).toBe('ans-1');
+    expect(after.decisions[0]?.supersededBy).toBeNull();
+    // The promoted id is retired for good: the counter never winds back, so a
+    // Question still holding `about: 'req-1'` can never repoint at a new item.
+    expect(after.nextIds.requirement).toBe(2);
   });
 
-  it('records a null answer id when no answer closed the gap', () => {
+  it('promotes across collections without caring which one an item came from', () => {
     const after = applyDelta(
       seeded(),
-      delta({ gaps: { resolve: [{ id: 'gap-1', resolution: 'closed by a new source' }] } }),
+      delta({
+        decisions: {
+          promote: [{ from: 'con-1', ...decisionDraft('Postgres it is', { kind: 'constraint' }) }],
+        },
+      }),
+      { settledBy: new Map([['con-1', AnswerId.parse('ans-1')]]) },
     );
-    expect(after.resolvedGaps[0]?.resolvedByAnswerId).toBeNull();
+
+    expect(after.constraints).toHaveLength(0);
+    expect(after.decisions[0]?.promotedFrom).toBe('con-1');
   });
 
-  it('ignores a resolvedByAnswerId the model tries to supply', () => {
-    // The field is not in the schema, so Zod strips it. Asserting that here
-    // pins the contract: the engine owns this value, not the model.
-    const parsed = UnderstandingDelta.parse({
-      gaps: { resolve: [{ id: 'gap-1', resolution: 'x', resolvedByAnswerId: 'ans-99' }] },
-    });
-    expect(parsed.gaps.resolve[0]).not.toHaveProperty('resolvedByAnswerId');
+  it('accepts a cited source when no answer settled it', () => {
+    const after = applyDelta(
+      seeded(),
+      delta({
+        decisions: {
+          promote: [
+            { from: 'req-1', ...decisionDraft('SSO via Okta', { settledBySourceId: 'src-1' }) },
+          ],
+        },
+      }),
+      { knownSourceIds: new Set(['src-1']) },
+    );
+    expect(after.decisions[0]?.settledBy).toBe('src-1');
   });
 
-  it('rejects resolving a gap that is not open', () => {
+  it('prefers the engine-derived answer over a source the model cited', () => {
+    // The engine knows which answer settled which item; the model is guessing.
+    // A silent disagreement here would attribute a user's decision to a document.
+    const after = applyDelta(
+      seeded(),
+      delta({
+        decisions: {
+          promote: [
+            { from: 'req-1', ...decisionDraft('SSO via Okta', { settledBySourceId: 'src-1' }) },
+          ],
+        },
+      }),
+      {
+        settledBy: new Map([['req-1', AnswerId.parse('ans-1')]]),
+        knownSourceIds: new Set(['src-1']),
+      },
+    );
+    expect(after.decisions[0]?.settledBy).toBe('ans-1');
+  });
+
+  it('rejects a decision that names nothing that settled it', () => {
     expect(() =>
       applyDelta(
         seeded(),
-        delta({ gaps: { resolve: [{ id: 'gap-99', resolution: 'invented' }] } }),
+        delta({ decisions: { promote: [{ from: 'req-1', ...decisionDraft('Unfounded') }] } }),
+      ),
+    ).toThrow(UnsettledDecisionError);
+  });
+
+  it('rejects a cited source that does not exist', () => {
+    expect(() =>
+      applyDelta(
+        seeded(),
+        delta({
+          decisions: {
+            promote: [{ from: 'req-1', ...decisionDraft('X', { settledBySourceId: 'src-99' }) }],
+          },
+        }),
+        { knownSourceIds: new Set(['src-1']) },
       ),
     ).toThrow(UnknownReferenceError);
   });
 
-  it('accumulates resolved gaps across turns rather than replacing them', () => {
-    const turn1 = applyDelta(
-      seeded(),
-      delta({ gaps: { resolve: [{ id: 'gap-1', resolution: 'answered' }] } }),
+  it('rejects promoting an item that does not exist', () => {
+    expect(() =>
+      applyDelta(
+        seeded(),
+        delta({ decisions: { promote: [{ from: 'req-99', ...decisionDraft('Invented') }] } }),
+      ),
+    ).toThrow(UnknownReferenceError);
+  });
+
+  it('rejects promoting the same item twice in one delta', () => {
+    expect(() =>
+      applyDelta(
+        seeded(),
+        delta({
+          decisions: {
+            promote: [
+              { from: 'req-1', ...decisionDraft('One') },
+              { from: 'req-1', ...decisionDraft('Two') },
+            ],
+          },
+        }),
+        { settledBy: new Map([['req-1', AnswerId.parse('ans-1')]]) },
+      ),
+    ).toThrow(DuplicateIdError);
+  });
+
+  it('adds a decision with no open item behind it', () => {
+    const after = applyDelta(
+      emptyUnderstanding(),
+      delta({
+        decisions: { add: [decisionDraft('Ship on Postgres', { settledBySourceId: 'src-1' })] },
+      }),
+      { knownSourceIds: new Set(['src-1']) },
     );
-    const withNewGap = applyDelta(turn1, delta({ gaps: { add: [gapDraft('data retention')] } }));
-    const turn2 = applyDelta(
-      withNewGap,
-      delta({ gaps: { resolve: [{ id: 'gap-2', resolution: 'also answered' }] } }),
+    expect(after.decisions[0]?.promotedFrom).toBeNull();
+    expect(after.decisions[0]?.settledBy).toBe('src-1');
+  });
+});
+
+describe('applyDelta — supersession', () => {
+  const withOneDecision = (): Understanding =>
+    applyDelta(
+      emptyUnderstanding(),
+      delta({
+        decisions: { add: [decisionDraft('Use magic links', { settledBySourceId: 'src-1' })] },
+      }),
+      { knownSourceIds: new Set(['src-1']) },
     );
 
-    expect(turn2.resolvedGaps).toHaveLength(2);
-    expect(turn2.gaps).toHaveLength(0);
+  it('marks the old record and keeps it', () => {
+    // ADR rule: an accepted record is never edited and never deleted. The trail
+    // of supersessions is the history, so `decisions[]` grows monotonically.
+    const after = applyDelta(
+      withOneDecision(),
+      delta({
+        decisions: {
+          add: [decisionDraft('Use SSO', { settledBySourceId: 'src-1', supersedes: 'dec-1' })],
+        },
+      }),
+      { knownSourceIds: new Set(['src-1']) },
+    );
+
+    expect(after.decisions).toHaveLength(2);
+    expect(after.decisions[0]?.supersededBy).toBe('dec-2');
+    expect(after.decisions[1]?.supersededBy).toBeNull();
+    expect(currentDecisions(after).map((d) => d.id)).toEqual(['dec-2']);
+  });
+
+  it('rejects superseding a decision that does not exist', () => {
+    expect(() =>
+      applyDelta(
+        withOneDecision(),
+        delta({
+          decisions: {
+            add: [decisionDraft('X', { settledBySourceId: 'src-1', supersedes: 'dec-99' })],
+          },
+        }),
+        { knownSourceIds: new Set(['src-1']) },
+      ),
+    ).toThrow(UnknownReferenceError);
+  });
+
+  it('rejects superseding a decision that was already superseded', () => {
+    // Means the model was reasoning about state two revisions stale. Allowing it
+    // would fork the chain into a shape no projection can render.
+    const once = applyDelta(
+      withOneDecision(),
+      delta({
+        decisions: {
+          add: [decisionDraft('Use SSO', { settledBySourceId: 'src-1', supersedes: 'dec-1' })],
+        },
+      }),
+      { knownSourceIds: new Set(['src-1']) },
+    );
+
+    expect(() =>
+      applyDelta(
+        once,
+        delta({
+          decisions: {
+            add: [decisionDraft('Use OTP', { settledBySourceId: 'src-1', supersedes: 'dec-1' })],
+          },
+        }),
+        { knownSourceIds: new Set(['src-1']) },
+      ),
+    ).toThrow(UnknownReferenceError);
   });
 });
 

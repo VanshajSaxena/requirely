@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   UnderstandingAssessment as AssessmentSchema,
+  type CoverageDimension,
   type QuestionDraft,
   QuestionDraft as QuestionDraftSchema,
   type SufficiencyVerdict,
@@ -9,7 +10,7 @@ import {
   Understanding as UnderstandingSchema,
   SufficiencyVerdict as VerdictSchema,
 } from '../domain/index.ts';
-import { resolveBlockingGaps, selectQuestions } from './loop.ts';
+import { resolveBlockingItems, selectQuestions } from './loop.ts';
 
 /**
  * The pure parts of the loop. No adapters, so these live in `src/engine/`;
@@ -17,22 +18,22 @@ import { resolveBlockingGaps, selectQuestions } from './loop.ts';
  * `src/integration/`.
  */
 
+/** Builds an understanding whose open requirements carry the given ids and lenses. */
 const understanding = (
-  gaps: readonly { id: string; dimension: string; blocking?: boolean }[],
+  items: readonly { id: string; dimension: string; blocking?: boolean }[],
 ): Understanding =>
   UnderstandingSchema.parse({
-    gaps: gaps.map((gap) => ({
-      id: gap.id,
-      dimension: gap.dimension,
-      topic: gap.id,
-      description: 'scripted',
-      blocking: gap.blocking ?? false,
-      impact: 'medium',
+    requirements: items.map((item) => ({
+      id: item.id,
+      statement: 'scripted',
+      kind: 'functional',
+      dimension: item.dimension,
+      blocking: item.blocking ?? false,
     })),
   });
 
-const assessment = (blockingGapIds: string[]): UnderstandingAssessment =>
-  AssessmentSchema.parse({ summary: 'scripted', blockingGapIds, coverage: [] });
+const assessment = (blockingItemIds: string[]): UnderstandingAssessment =>
+  AssessmentSchema.parse({ summary: 'scripted', blockingItemIds, coverage: [] });
 
 const verdict = (shortfalls: string[]): SufficiencyVerdict =>
   VerdictSchema.parse({
@@ -40,71 +41,98 @@ const verdict = (shortfalls: string[]): SufficiencyVerdict =>
     rationale: 'scripted',
     coverage: [],
     shortfalls,
-    blockingGapIds: [],
+    blockingItemIds: [],
     questionsAsked: 0,
     questionBudget: 12,
     budgetExhausted: false,
   });
 
-const draft = (gapId: string, text = 'Question?'): QuestionDraft =>
-  QuestionDraftSchema.parse({ gapId, text, mode: 'single', options: [] });
+const draft = (
+  dimension: CoverageDimension,
+  text = 'Question?',
+  about: string | null = null,
+): QuestionDraft =>
+  QuestionDraftSchema.parse({ dimension, about, text, mode: 'single', options: [] });
 
-describe('resolveBlockingGaps', () => {
-  it('unions gaps flagged blocking with those the assessment named', () => {
-    const result = resolveBlockingGaps(
+describe('resolveBlockingItems', () => {
+  it('unions items flagged blocking with those the assessment named', () => {
+    const result = resolveBlockingItems(
       understanding([
-        { id: 'gap-1', dimension: 'purpose', blocking: true },
-        { id: 'gap-2', dimension: 'users' },
+        { id: 'req-1', dimension: 'purpose', blocking: true },
+        { id: 'req-2', dimension: 'users' },
       ]),
-      assessment(['gap-2']),
+      assessment(['req-2']),
     );
 
-    expect(result.sort()).toEqual(['gap-1', 'gap-2']);
+    expect(result.sort()).toEqual(['req-1', 'req-2']);
   });
 
-  it('drops an invented blocking gap instead of letting it deadlock the session', () => {
+  it('drops an invented blocking item instead of letting it deadlock the session', () => {
     // Unlike a delta, where an unknown ID must fail the turn: a hallucinated
-    // blocking gap that survived would veto sufficiency forever.
-    const result = resolveBlockingGaps(
-      understanding([{ id: 'gap-1', dimension: 'purpose' }]),
-      assessment(['gap-99']),
+    // blocking item that survived would veto sufficiency forever.
+    const result = resolveBlockingItems(
+      understanding([{ id: 'req-1', dimension: 'purpose' }]),
+      assessment(['req-99']),
     );
 
     expect(result).toEqual([]);
   });
 
-  it('does not duplicate a gap named by both sources', () => {
-    const result = resolveBlockingGaps(
-      understanding([{ id: 'gap-1', dimension: 'purpose', blocking: true }]),
-      assessment(['gap-1']),
+  it('drops an item that was promoted since the assessment named it', () => {
+    // Not model error — this is the loop working. An item named blocking on turn
+    // N legitimately becomes a Decision on turn N+1, so a stale id is expected.
+    const result = resolveBlockingItems(
+      UnderstandingSchema.parse({
+        decisions: [
+          {
+            id: 'dec-1',
+            statement: 'settled',
+            kind: 'functional',
+            dimension: 'purpose',
+            rationale: 'answered',
+            promotedFrom: 'req-1',
+            settledBy: 'ans-1',
+          },
+        ],
+      }),
+      assessment(['req-1']),
     );
 
-    expect(result).toEqual(['gap-1']);
+    expect(result).toEqual([]);
+  });
+
+  it('does not duplicate an item named by both sources', () => {
+    const result = resolveBlockingItems(
+      understanding([{ id: 'req-1', dimension: 'purpose', blocking: true }]),
+      assessment(['req-1']),
+    );
+
+    expect(result).toEqual(['req-1']);
   });
 });
 
 describe('selectQuestions', () => {
-  const gaps = understanding([
-    { id: 'gap-acceptance', dimension: 'acceptance' },
-    { id: 'gap-users', dimension: 'users' },
-    { id: 'gap-data', dimension: 'data' },
+  const open = understanding([
+    { id: 'req-1', dimension: 'acceptance' },
+    { id: 'req-2', dimension: 'users' },
+    { id: 'req-3', dimension: 'data' },
   ]);
 
   it('orders by the domain-computed shortfall order, not by model order', () => {
     const selected = selectQuestions(
-      [draft('gap-users'), draft('gap-acceptance')],
-      gaps,
+      [draft('users'), draft('acceptance')],
+      open,
       verdict(['acceptance', 'users']),
       10,
     );
 
-    expect(selected.map((q) => q.gapId)).toEqual(['gap-acceptance', 'gap-users']);
+    expect(selected.map((q) => q.dimension)).toEqual(['acceptance', 'users']);
   });
 
   it('sorts questions for non-shortfall dimensions last, keeping model order within a band', () => {
     const selected = selectQuestions(
-      [draft('gap-data', 'first'), draft('gap-users', 'second')],
-      gaps,
+      [draft('data', 'first'), draft('users', 'second')],
+      open,
       verdict(['users']),
       10,
     );
@@ -112,20 +140,45 @@ describe('selectQuestions', () => {
     expect(selected.map((q) => q.text)).toEqual(['second', 'first']);
   });
 
-  it('drops questions targeting a gap that is not open', () => {
-    const selected = selectQuestions([draft('gap-99'), draft('gap-users')], gaps, verdict([]), 10);
-    expect(selected.map((q) => q.gapId)).toEqual(['gap-users']);
+  it('keeps a question that targets no item at all', () => {
+    // The single most important behaviour change from deleting `Gap`. This used
+    // to be dropped, so a model could only ask about something it had first
+    // invented an entity for — which made turn-one absences unaskable.
+    const selected = selectQuestions(
+      [draft('acceptance', 'How would you know?')],
+      open,
+      verdict([]),
+      10,
+    );
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.about).toBeNull();
+  });
+
+  it('clears a stale `about` rather than dropping the question', () => {
+    const selected = selectQuestions(
+      [draft('users', 'Who uses this?', 'req-99')],
+      open,
+      verdict([]),
+      10,
+    );
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.about).toBeNull();
+  });
+
+  it('preserves an `about` that still names an open item', () => {
+    const selected = selectQuestions([draft('users', 'Who?', 'req-2')], open, verdict([]), 10);
+    expect(selected[0]?.about).toBe('req-2');
   });
 
   it('truncates to the cap', () => {
     const selected = selectQuestions(
-      [draft('gap-acceptance'), draft('gap-users'), draft('gap-data')],
-      gaps,
+      [draft('acceptance'), draft('users'), draft('data')],
+      open,
       verdict(['acceptance', 'users', 'data']),
       2,
     );
 
     expect(selected).toHaveLength(2);
-    expect(selected.map((q) => q.gapId)).toEqual(['gap-acceptance', 'gap-users']);
+    expect(selected.map((q) => q.dimension)).toEqual(['acceptance', 'users']);
   });
 });

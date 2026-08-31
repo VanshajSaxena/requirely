@@ -15,9 +15,9 @@ them.** If evidence changes, say so and ask.
 | 1 | **`Provenance.quote` is never verified against the source text.** A model can fabricate a citation and it renders in an SRS looking authoritative. | **Expected.** Fix properly in a later iteration. |
 | 2 | ~~`Requirement.confidence` was decorative~~ | **Done** — removed in Phase 2. |
 | 3 | **`Understanding` grows unbounded** — every collection, not just requirements. Eventually the analyze prompt will not fit. | **Keep building the dev version.** Optimize when *either* context limits start exhausting fast *or* token spend gets expensive, even in development. **Token usage is a standing priority.** |
-| 4 | **A gap added and resolved in the same delta is unsupported** — the model cannot reference an id that does not exist yet. | Support it **properly, when appropriate**. Mechanism when needed: a client-supplied `tempId` on `gaps.add` that `gaps.resolve` may reference, translated inside `applyDelta`. |
+| 4 | **An item added and promoted in the same delta is unsupported** — the model cannot reference an id that does not exist yet. (Was "a gap added and resolved"; `Gap` is gone but the shape of the limitation is identical.) | Support it **properly, when appropriate**. Mechanism when needed: a client-supplied `tempId` on `add` that `promote` may reference, translated inside `applyDelta`. |
 | 5 | **No optimistic concurrency.** `sessions.version` exists and is bumped, but nothing reads it. | Not a priority. The column is present so enforcement is later a `WHERE` clause, not a migration. |
-| 6 | **`resolvedGaps` never shrinks** — a growing tail in a JSONB blob re-parsed every turn. | Same trigger conditions as #3. |
+| 6 | ~~`resolvedGaps` never shrinks~~ → **`decisions[]` never shrinks.** Same shape, deliberately reintroduced in Phase 8: a superseded Decision is marked, never removed, because the ADR rule is that the trail of supersessions *is* the history. | Same trigger conditions as #3 — but note this one is now a **design commitment**, not an oversight. Pruning it would be pruning the audit trail. |
 
 **Weakness #3 is the one to watch.** The mitigation is already placed:
 `engine/context.ts` is the *single* place any model input is assembled, so
@@ -85,6 +85,29 @@ wrong extension is a user error worth surfacing. Magic-byte sniffing is the
 upgrade if it becomes a nuisance.
 
 **No auth, no multi-tenancy.** Session rows carry no `ownerId`. Additive later.
+`Decision.settledBy` being a durable id rather than a tag is what makes "which
+user settled this?" answerable when it arrives — that is the whole reason
+`settledBy: 'user'` was rejected during the Phase 8 design.
+
+**The domain delta is not sendable, and got further from it in Phase 8 Step 1.**
+Measured after the reshape: `UnderstandingDelta` at `io: 'input'` is **84 optional
+/ 34 union / 9.9 KB**, against Anthropic caps of 24 and 16 — worse than the 71/28
+that started the investigation, because `dimension`, `blocking` and the decisions
+ops all add fields. This is expected and not a regression: Step 1 fixes the
+*model*, Step 2 introduces `src/wire/` and a codec so the model never sees a
+domain schema at all. Recorded because "the numbers went up" is exactly the sort
+of thing that reads as failure without the sentence explaining why it isn't.
+For contrast, `Understanding` at `io: 'output'` is **0 optional / 20 union** — the
+"nullable, not optional" convention survived the reshape intact.
+
+**The live-cassette guard answers "was anything recorded?", not "is it still
+valid?"** A cassette key hashes `(operation, instructions, input)`, so changing a
+prompt or a schema *orphans* a cassette rather than invalidating it: the skip
+guard still sees a file naming the right model, returns `true`, and the failure
+surfaces three calls deep as `no cassette at …`. Hit for real when Phase 8
+reshaped the domain. The fix is to delete the orphans — a cassette recorded
+against a schema that no longer exists is evidence for a claim nobody is making —
+not to widen the guard.
 
 ---
 
@@ -108,6 +131,18 @@ thing that gets rediscovered painfully.
   `.partial()` does not strip defaults. Both are silent data bugs.
 - **`Set.add()` returns the Set, not a boolean.** `!seen.add(id)` is always false;
   a duplicate check written that way never fires.
+- **Zod brands *intersect*, which makes id subtyping expressible.**
+  `.brand<'OpenItem'>().brand<'RequirementId'>()` yields both brands, so a
+  `RequirementId` widens to `OpenItemId` with no cast while the reverse and every
+  sibling narrowing stay errors. Used in `domain/shared/ids.ts`; proved in all
+  three directions with `@ts-expect-error` before adoption. Do not "simplify" it
+  to a `z.string()` union — that silently loses the narrowing half.
+- **An unknown key in a Zod object is *stripped*, so a renamed field makes a test
+  pass vacuously.** Renaming `blockingGapIds` → `blockingItemIds` left one policy
+  test parsing `blockingGapIds` into nothing: the assertion still ran, against an
+  empty list, and reported the veto working when it was not being exercised at
+  all. After renaming a field, grep for the old name in fixtures — the compiler
+  will not.
 - **`unpdf` rejects a Node `Buffer`** — *"Please provide binary data as
   `Uint8Array`, rather than `Buffer`"* — even though `Buffer` extends
   `Uint8Array` and satisfies the port's type. Any caller using `fs.readFile`

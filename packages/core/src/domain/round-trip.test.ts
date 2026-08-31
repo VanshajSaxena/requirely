@@ -32,7 +32,7 @@ const verdict = SufficiencyVerdict.parse({
   rationale: 'Not yet sufficient: coverage below the 0.70 bar for: acceptance (0.25).',
   coverage: [{ dimension: 'acceptance', score: 0.25, rationale: 'no acceptance criteria stated' }],
   shortfalls: ['acceptance'],
-  blockingGapIds: ['gap-1'],
+  blockingItemIds: ['req-1'],
   questionsAsked: 2,
   questionBudget: 12,
   budgetExhausted: false,
@@ -46,21 +46,54 @@ const revision = UnderstandingRevision.parse({
   createdAt: timestamp,
   content: {
     product: { name: 'Requirely', users: [{ label: 'Product managers', needs: ['faster specs'] }] },
+    decisions: [
+      {
+        id: 'dec-1',
+        statement: 'Sign-in is SSO via Okta',
+        kind: 'functional',
+        dimension: 'core-behaviour',
+        rationale: 'The only identity provider already in use.',
+        promotedFrom: 'req-9',
+        settledBy: 'ans-1',
+        provenance: [{ sourceId: 'src-1', quote: 'we use Okta' }],
+      },
+      // A superseded record, because the supersession chain is the part most
+      // likely to be lost in a JSONB round-trip and the part nothing else pins.
+      {
+        id: 'dec-0',
+        statement: 'Sign-in is magic links',
+        kind: 'functional',
+        dimension: 'core-behaviour',
+        rationale: 'Superseded once Okta was confirmed.',
+        settledBy: 'src-1',
+        supersededBy: 'dec-1',
+      },
+    ],
     requirements: [
       {
         id: 'req-1',
         statement: 'Users sign in via SSO',
         kind: 'functional',
+        dimension: 'core-behaviour',
+        blocking: true,
         provenance: [{ sourceId: 'src-1', quote: 'we use Okta' }],
       },
     ],
-    constraints: [{ id: 'con-1', statement: 'Must run on-premise', category: 'technical' }],
+    constraints: [
+      {
+        id: 'con-1',
+        statement: 'Must run on-premise',
+        category: 'technical',
+        dimension: 'constraints',
+      },
+    ],
     assumptions: [
       {
         id: 'asm-1',
         statement: 'English only at launch',
         basis: 'no locale mentioned',
         risk: 'low',
+        dimension: 'edge-cases',
       },
     ],
     contradictions: [
@@ -68,28 +101,7 @@ const revision = UnderstandingRevision.parse({
         id: 'ctr-1',
         description: 'Retention stated as both 30 and 90 days',
         between: [{ sourceId: 'src-1' }, { sourceId: 'src-2' }],
-      },
-    ],
-    gaps: [
-      {
-        id: 'gap-1',
-        dimension: 'acceptance',
-        topic: 'sign-out',
-        description: 'unknown',
-        blocking: true,
-        impact: 'high',
-      },
-    ],
-    resolvedGaps: [
-      {
-        id: 'gap-0',
-        dimension: 'purpose',
-        topic: 'audience',
-        description: 'unknown',
-        blocking: false,
-        impact: 'low',
-        resolvedByAnswerId: 'ans-1',
-        resolution: 'Internal teams first.',
+        dimension: 'data',
       },
     ],
   },
@@ -129,7 +141,7 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
     UnderstandingAssessment,
     UnderstandingAssessment.parse({
       summary: 'partial',
-      blockingGapIds: ['gap-1'],
+      blockingItemIds: ['req-1'],
       coverage: [{ dimension: 'purpose', score: 0.9, rationale: 'clear' }],
     }),
   ],
@@ -139,11 +151,21 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
     UnderstandingDelta.parse({
       product: { name: 'Requirely' },
       requirements: {
-        add: [{ statement: 'Export to PDF', kind: 'functional' }],
+        add: [{ statement: 'Export to PDF', kind: 'functional', dimension: 'core-behaviour' }],
         revise: [{ id: 'req-1', priority: 'must', reason: 'confirmed' }],
-        remove: [{ id: 'req-2', reason: 'contradicted' }],
+        retire: [{ id: 'req-2', reason: 'contradicted' }],
       },
-      gaps: { resolve: [{ id: 'gap-1', resolvedByAnswerId: 'ans-1', resolution: 'answered' }] },
+      decisions: {
+        promote: [
+          {
+            from: 'req-3',
+            statement: 'Export is PDF only',
+            kind: 'scope',
+            dimension: 'core-behaviour',
+            rationale: 'DOCX was offered and not chosen.',
+          },
+        ],
+      },
     }),
   ],
   [
@@ -153,7 +175,8 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
       id: 'qst-1',
       sessionId: 'ses-1',
       turnId: 'trn-1',
-      gapId: 'gap-1',
+      dimension: 'users',
+      about: 'req-1',
       text: 'Who can create an account?',
       mode: 'single',
       options: [

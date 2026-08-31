@@ -9,13 +9,18 @@ provider-agnostic constraint. This file covers only what is true inside this pac
 
 ## Status
 
-Phases 0–5 are done: tooling, boundary gates, the domain model, the engine loop,
-Postgres storage with atomic turns, real AI adapters (Anthropic + OpenAI, with
-retry and cassettes), and ingestion (text, PDF, DOCX, audio).
+Phases 0–6 are done, plus Phase 7 steps 0–1 (adapter fixes, cost accounting, the
+live harness and the first real model call) and **Phase 8 step 1** (the domain
+reshape: a settled `Decision` tier, promotion, and `Gap` deleted).
 
-**Still missing: projections (Phase 6) and the CLI (Phase 7).** Nothing has yet
-run against a live model — Phase 4's providers are wired and unit-tested but no
-real call has been made.
+**Phase 7 is parked mid-flight.** The first live calls found that providers
+compile strict schemas into decoding grammars and cap their branchiness, and ours
+was 3× over. Phase 8 is that redesign; steps 2–6 (wire+codec, adapters, engine,
+projections, evals) are next, and Phase 7 steps 2–4 resume after.
+
+**Live cassettes are currently absent** — the Phase 7 recordings were orphaned by
+the Phase 8 schema change and re-recording is blocked on the org API spend limit.
+`src/integration/live.test.ts` skips loudly rather than passing vacuously.
 
 See `docs/PLAN.md` for the full picture, `docs/DECISIONS.md` for why the
 architecture is shaped this way, and `docs/WEAKNESSES.md` for what is known-wrong.
@@ -86,7 +91,8 @@ Load-bearing details:
 - **`engine/context.ts` is the only place a model's input is assembled.** Token optimization (windowing, summarization, `Embedder` retrieval) lands there and nowhere else.
 - **Two strategies, `REQUIRELY_TURN_STRATEGY`.** `separate` (3 calls) assesses the stored understanding; `merged` (2 calls) assesses a predicted one. The saving is exactly the compact projection's size per turn. An integration test asserts both reach the same outcome.
 - **`merge` is passed _into_ strategies** rather than returning a delta to apply. Applying twice would advance the document's id counters twice; the callback makes that unexpressible, and a runtime guard catches it anyway.
-- **Unknown IDs are handled asymmetrically on purpose.** `applyDelta` throws on a bad ID (one retry). `resolveBlockingGaps` and `selectQuestions` silently drop them, because a hallucinated blocking gap would veto sufficiency forever and deadlock the session.
+- **Unknown IDs are handled asymmetrically on purpose.** `applyDelta` throws on a bad ID (one retry). `resolveBlockingItems` silently drops them, because a hallucinated blocking item would veto sufficiency forever and deadlock the session — and because promotion makes a stale id an *ordinary* outcome of the loop working.
+- **`selectQuestions` no longer drops anything.** It used to require a question to name a live `Gap`, which meant a model could only ask about something it had first invented an entity for. Now a stale `about` is *cleared* and the question survives — a question about an absence is the most valuable kind on turn one.
 - **Question ordering comes from `verdict.shortfalls`**, not a model-supplied priority — the same reasoning that removed `Requirement.confidence`.
 - **The fake adapter validates scripted responses against the real schema.** A fixture that drifts fails exactly as a bad model response would.
 
@@ -106,18 +112,42 @@ Load-bearing conventions, each with a test pinning it:
 
 - **Nullable, not optional.** Absent values are `null`, because the domain is stored as JSONB and `undefined` disappears on serialization. `round-trip.test.ts` asserts this for every entity.
 - **Drafts vs entities.** A model emits `*Draft` (no `id`, no timestamps); the domain assigns identity. Drafts are derived with `.omit({ id: true })` so they cannot drift from the entity.
+- **Two tiers, and the ratio between them is the product.** `decisions[]` is what
+  is settled; `requirements` / `constraints` / `assumptions` / `contradictions`
+  are what is not. The loop moves items from the second to the first via
+  `decisions.promote`, which creates the Decision and removes the item in one
+  operation. There is **no `Gap`** — an unsettled requirement *is* the gap, and an
+  absence is a `dimension` with a low score and nothing behind it.
+- **Decisions are immutable, ADR-style.** Never edited, never deleted; replaced by
+  adding a new one with `supersedes`, after which `applyDelta` writes
+  `supersededBy` on the old record. So there is no `status` enum (proposed-vs-
+  accepted *is* the tier split) and `decisions[]` grows monotonically by design.
+  `currentDecisions()` filters to `supersededBy === null`.
+- **Every Decision names what settled it, and the model may only cite a Source.**
+  `settledBy: AnswerId | SourceId`, but an `AnswerId` is a 40-character UUIDv7 —
+  the exact transcription risk Phase 3b removed. The engine derives answer-settled
+  promotions from `Question.about` and passes them in `ApplyDeltaContext.settledBy`,
+  where they **win** over any source the model cited. The wire slot is
+  `settledBySourceId`, validated against `ctx.knownSourceIds`.
+- **`OpenItemId` is a brand *supertype*, because Zod brands intersect.**
+  `.brand<'OpenItem'>().brand<'RequirementId'>()` carries both, so a
+  `RequirementId` widens with no cast while `OpenItemId → RequirementId` and every
+  sibling narrowing stay errors. Proved in all three directions with
+  `@ts-expect-error` before adoption. Do not flatten it to a `z.string()` union.
+- **`retire`, not `remove`.** An item leaves its collection for two different
+  reasons — it was wrong, or it was promoted — and only the first is a retirement.
 - **Two id schemes, chosen by scope — not one scheme everywhere.**
 
   | Scope | Form | Minted by | Why |
   | --- | --- | --- | --- |
-  | Inside `Understanding` (requirement, constraint, assumption, contradiction, gap) | `req-1`, `gap-3` | `applyDelta`, from `Understanding.nextIds` | No table, no PK — unique within one JSONB document is all that is needed. Short enough for a model to copy back. |
+  | Inside `Understanding` (decision, requirement, constraint, assumption, contradiction) | `dec-7`, `req-1` | `applyDelta`, from `Understanding.nextIds` | No table, no PK — unique within one JSONB document is all that is needed. Short enough for a model to copy back. |
   | `Source` | `src-1` | ingestion, from a session-scoped ordinal | The one table PK a model must emit (`provenance.sourceId`). PK is `(session_id, id)`. |
   | Session, turn, revision, question, answer | `ses-01a033cb-…` (UUIDv7) | `IdGenerator` port | Never model-emitted. Keeps global uniqueness and index locality, which is what UUIDv7 is good for. |
 
   A 40-character UUID shared a 28-character prefix with its neighbours — UUIDv7's timestamp bits guarantee that for a batch minted in one call. Every model reference was a transcription task with an all-or-nothing failure (`applyDelta` throws), on a path costing 2–3 calls at `effort: 'high'`.
-- **`Understanding.nextIds` is a monotonic counter, not `max + 1`.** Removal makes `max` non-monotonic; reissuing `gap-3` would silently repoint a `Question` from an earlier turn that still stores `gapId: 'gap-3'`. Pinned by a test.
+- **`Understanding.nextIds` is a monotonic counter, not `max + 1`.** Retirement *and promotion* both make `max` non-monotonic; reissuing `req-3` would silently repoint a `Question` from an earlier turn that still stores `about: 'req-3'`, and would collide with a `Decision.promotedFrom` still naming the original. Pinned by a test.
 - **`applyDelta` takes no `IdGenerator`.** It is a function of `(understanding, delta)` plus an optional `{ resolvedBy }` map — more deterministic than before, not less.
-- **`GapResolution` has no `resolvedByAnswerId`.** The engine derives gap → answer (`Question.gapId`, `Answer.questionId`) and passes it in. Eliminating a model reference beats shortening one; look for that before reaching for handles or enums.
+- **Nothing on the wire carries an `AnswerId`.** The engine derives item → answer (`Question.about`, `Answer.questionId`) and passes it in. Eliminating a model reference beats shortening one; look for that before reaching for handles or enums.
 - **`.prefault()`, not `.default()`, for nested objects.** Zod's `.default()` returns its argument _without parsing it_, so `.default({})` yields a bare `{}` and skips every inner default. `.prefault({})` parses first.
 - **Revisions strip defaults.** `patchOf()` in `understanding/delta.ts` — `.partial()` alone leaves `.default()` intact, so a revision naming one field would silently overwrite the others with their defaults.
 - **Unmentioned means unchanged; `null` means cleared.** `stripUndefined` in `apply-delta.ts` enforces this.

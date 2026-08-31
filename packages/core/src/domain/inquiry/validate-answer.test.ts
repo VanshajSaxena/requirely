@@ -9,7 +9,7 @@ const question = (overrides: Record<string, unknown> = {}) =>
     id: 'qst-1',
     sessionId: 'ses-1',
     turnId: 'trn-1',
-    gapId: 'gap-1',
+    dimension: 'acceptance',
     text: 'Who should be able to create an account?',
     mode: 'single',
     options: [
