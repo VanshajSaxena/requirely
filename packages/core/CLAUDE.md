@@ -12,13 +12,13 @@ provider-agnostic constraint. This file covers only what is true inside this pac
 Phases 0–6 are done, plus Phase 7 steps 0–1 (adapter fixes, cost accounting, the
 live harness and the first real model call) and **Phase 8 steps 1–3** (the domain
 reshape — a settled `Decision` tier, promotion, `Gap` deleted — `src/wire/`, the
-sentinel-encoded flat op list the model actually sees, and three generation
-methods behind one port).
+sentinel-encoded flat op list the model actually sees, three generation methods
+behind one port, and a sufficiency verdict that is counted rather than scored).
 
 **Phase 7 is parked mid-flight.** The first live calls found that providers
 compile strict schemas into decoding grammars and cap their branchiness, and ours
-was 3× over. Phase 8 is that redesign; steps 4–6 (engine, projections, evals) are
-next, and Phase 7 steps 2–4 resume after.
+was 3× over. Phase 8 is that redesign; steps 5–6 (projections, evals) are next,
+and Phase 7 steps 2–4 resume after.
 
 **Live cassettes are currently absent** — the Phase 7 recordings were orphaned by
 the Phase 8 schema change and re-recording is blocked on the org API spend limit.
@@ -90,6 +90,22 @@ Consequences worth knowing:
 
 Load-bearing details:
 
+- **Sufficiency is counted, not scored.** Three conditions, all read off the
+  stored document: no blocking open items, every required dimension has a Decision
+  behind it, and `ratio >= 0.5`. The middle one is what stops a settled ratio
+  being gamed by promoting a single requirement. **Coverage cannot vote** — it
+  orders questions and catches shallow decisions that counting cannot, and two
+  tests pin that it can neither create nor block a verdict.
+- **`stalled` is a status, not a flag.** Two turns settling nothing new, checked
+  *after* `exhausted` so a turn that did both reads as "out of budget" — the half
+  a user can act on by raising it. Movement counts `decisions + superseded`,
+  because counting only current decisions would read a supersession as a wasted
+  turn.
+- **The stall counter travels on the previous turn's verdict**, read with
+  `listTurns`. Phase 3 removed a `listTurns` call for `Turn.index` because that
+  was derivable; this is not derivable from anything, and one small read against
+  three model calls did not justify a new port method or a duplicated counter on
+  `Session`.
 - **`engine/context.ts` is the only place a model's input is assembled.** Token optimization (windowing, summarization, `Embedder` retrieval) lands there and nowhere else.
 - **Two strategies, `REQUIRELY_TURN_STRATEGY`.** `separate` (3 calls) assesses the stored understanding; `merged` (2 calls) assesses a predicted one. The saving is exactly the compact projection's size per turn. An integration test asserts both reach the same outcome.
 - **`merge` is passed _into_ strategies** rather than returning a delta to apply. Applying twice would advance the document's id counters twice; the callback makes that unexpressible, and a runtime guard catches it anyway.
@@ -220,6 +236,17 @@ Load-bearing conventions, each with a test pinning it:
   | Session, turn, revision, question, answer | `ses-01a033cb-…` (UUIDv7) | `IdGenerator` port | Never model-emitted. Keeps global uniqueness and index locality, which is what UUIDv7 is good for. |
 
   A 40-character UUID shared a 28-character prefix with its neighbours — UUIDv7's timestamp bits guarantee that for a batch minted in one call. Every model reference was a transcription task with an all-or-nothing failure (`applyDelta` throws), on a path costing 2–3 calls at `effort: 'high'`.
+- **`Question.rationale` and `QuestionOption.commits` are required.** A question
+  with no stated reason is a form field; an option list without consequences is a
+  menu. Both were the first fields a model would drop while they were optional.
+- **`recommends` is an `OptionId` on the entity and an *index* on the draft.**
+  Option ids are minted by `materializeQuestions`, so a model cannot name one.
+  `because` is required exactly when `recommends` is, and `recommends` must name
+  one of the question's own options — both enforced by refinements on `Question`.
+- **`Question` is `QuestionShape` plus refinements, and the split is load-bearing.**
+  Zod 4's `.omit()` throws at *runtime* on a schema carrying refinements while
+  `tsc` stays green, so drafts derive from the unrefined `QuestionShape`. Never
+  add a cross-field rule to the shape.
 - **`Understanding.nextIds` is a monotonic counter, not `max + 1`.** Retirement *and promotion* both make `max` non-monotonic; reissuing `req-3` would silently repoint a `Question` from an earlier turn that still stores `about: 'req-3'`, and would collide with a `Decision.promotedFrom` still naming the original. Pinned by a test.
 - **`applyDelta` takes no `IdGenerator`.** It is a function of `(understanding, delta)` plus an optional `{ resolvedBy }` map — more deterministic than before, not less.
 - **Nothing on the wire carries an `AnswerId`.** The engine derives item → answer (`Question.about`, `Answer.questionId`) and passes it in. Eliminating a model reference beats shortening one; look for that before reaching for handles or enums.

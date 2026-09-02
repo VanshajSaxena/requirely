@@ -42,6 +42,20 @@ the best open engine). The direction of the error is safe: too-low caps degrade
 to `tool` early rather than 400ing late. But they are unverified — the probe that
 would settle them is blocked on the org API spend limit.
 
+**`minimumSettledRatio` and `stallAfterTurnsWithoutProgress` are unmeasured.**
+0.5 is the owner's stated goal written as a number and 2 turns is "one quiet turn
+is noise, two is a pattern" — neither has been checked against a real session. If
+the loop turns out to stall early on genuinely hard input, or to declare
+sufficiency on thin documents, these are the two numbers to move. They are policy
+fields precisely so moving them is not a code change.
+
+**Coverage now costs a model call per turn and decides nothing.** `assess` still
+orders questions and supplies the rationale a human reads, and it catches shallow
+decisions that counting cannot — but that is a weaker justification for a whole
+call than "it decides when we stop" was. The `merged` strategy already folds it
+into one call; if the evals show the ordering barely changes outcomes, dropping
+`assess` entirely is a real option.
+
 **`prompted` generation has never run against a real model.** It is covered by
 unit tests and a mock model, which prove the wiring and the repair ladder. What
 they cannot prove is the thing that matters: whether a real model, handed a JSON
@@ -164,6 +178,12 @@ thing that gets rediscovered painfully.
   shape, so anything that stores a generated value and re-validates it later —
   cassettes, a cache, a queue — must use `schema.out`, which `ZodCodec` exposes.
   Verified in both directions.
+- **Zod `.omit()` throws at *runtime* on a schema carrying refinements**, and
+  `tsc` is perfectly green. `.refine()` in Zod 4 attaches a check to the same
+  `ZodObject` rather than wrapping it, so `Question.omit(...)` still typechecks
+  and then dies on import with *".omit() cannot be used on object schemas
+  containing refinements"*. Keep an unrefined base (`QuestionShape`) for drafts to
+  derive from, and put cross-field rules only on the entity.
 - **`Set.add()` returns the Set, not a boolean.** `!seen.add(id)` is always false;
   a duplicate check written that way never fires.
 - **Zod brands *intersect*, which makes id subtyping expressible.**

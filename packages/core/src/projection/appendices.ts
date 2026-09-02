@@ -1,4 +1,10 @@
-import { currentDecisions, type OpenItem, openItems, type Understanding } from '../domain/index.ts';
+import {
+  currentDecisions,
+  type OpenItem,
+  openItems,
+  type Session,
+  type Understanding,
+} from '../domain/index.ts';
 import { describeSource } from './citations.ts';
 import { byOrdinal, DIMENSION, label } from './labels.ts';
 import { blocks, entries, entry, lines, section } from './markdown.ts';
@@ -11,6 +17,24 @@ import type { ProjectionInput } from './types.ts';
  * once. Three renderers each growing their own "what we still don't know"
  * section is three places for the honesty to quietly diverge.
  */
+
+/**
+ * Why gathering stopped, when it stopped early.
+ *
+ * The two early exits mean different things and a reader can act on the
+ * difference: `exhausted` says raise the budget, `stalled` says the questions
+ * stopped landing and better *input* is what is needed. A document that said
+ * only "incomplete" would leave the actionable half unsaid.
+ */
+export function whyItStopped(status: Session['status']): string {
+  if (status === 'exhausted') {
+    return ' The question budget was exhausted before everything could be settled.';
+  }
+  if (status === 'stalled') {
+    return ' Gathering stopped because successive rounds of questions settled nothing new — the remaining unknowns need better input, not more asking.';
+  }
+  return '';
+}
 
 /** The one human-readable line an open item has, whichever collection it came from. */
 const statementOf = (item: OpenItem): string =>

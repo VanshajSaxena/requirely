@@ -132,13 +132,23 @@ export const fixtures = {
         understandingAfter: revisionId,
         verdict: {
           sufficient: false,
-          rationale: 'Not yet sufficient: coverage below the 0.70 bar for: acceptance (0.20).',
+          rationale:
+            'Not yet sufficient (1 settled, 1 still open): nothing settled yet for: acceptance.',
+          settled: {
+            decisions: 1,
+            superseded: 0,
+            open: 1,
+            ratio: 0.5,
+            dimensions: ['core-behaviour'],
+          },
           coverage: [{ dimension: 'acceptance', score: 0.2, rationale: 'nothing stated' }],
           shortfalls: ['acceptance'],
           blockingItemIds: [],
           questionsAsked: 0,
           questionBudget: 12,
           budgetExhausted: false,
+          turnsWithoutProgress: 0,
+          stalled: false,
         },
         usage: [
           {
@@ -160,10 +170,25 @@ export const fixtures = {
           dimension: 'acceptance',
           about: 'req-1',
           text: 'How would you know this worked?',
+          rationale: 'Nothing states a success condition.',
           mode: 'single',
+          // A recommendation with its reasoning, so the storage round-trip covers
+          // the fields a UI would withhold rather than only the neutral ones.
+          recommends: `opt-${index * 2 + 1}`,
+          because: 'It measures the output rather than the process.',
           options: [
-            { id: `opt-${index * 2 + 1}`, label: 'A buildable spec' },
-            { id: `opt-${index * 2 + 2}`, label: 'Fewer clarifications', elaboration: 'Measured.' },
+            {
+              id: `opt-${index * 2 + 1}`,
+              label: 'A buildable spec',
+              commits: 'The document has to stand alone.',
+              settles: ['req-1'],
+            },
+            {
+              id: `opt-${index * 2 + 2}`,
+              label: 'Fewer clarifications',
+              elaboration: 'Measured.',
+              commits: 'Success depends on the team, not the spec.',
+            },
           ],
           askedAt: AT,
         },

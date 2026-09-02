@@ -1,8 +1,8 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { Clock } from '../ports/clock.ts';
 import type { IdGenerator } from '../ports/id-generator.ts';
 import { OptionId, QuestionId, type SessionId, type TurnId } from '../shared/ids.ts';
-import { optionListRule, Question, QuestionOption } from './question.ts';
+import { optionListRule, Question, QuestionOption, QuestionShape } from './question.ts';
 
 /**
  * What a model may emit when asked for questions.
@@ -11,20 +11,37 @@ import { optionListRule, Question, QuestionOption } from './question.ts';
  * the domain's to assign. `dimension` and `about` stay: the model chooses which
  * lens a question serves and, optionally, which existing open item it would
  * settle. It is choosing among things that already exist, not inventing them.
+ *
+ * **`recommends` is an index here and an `OptionId` on the entity.** Option ids
+ * are minted by `materializeQuestions`, so a model cannot name one — the same
+ * rule that produced this file in the first place. It points at a position in
+ * its own `options` array and the domain translates it.
+ *
+ * Derived from `QuestionShape` rather than `Question`: `.omit()` throws at
+ * runtime on a schema carrying refinements, and the entity's cross-field rules
+ * are about `OptionId`s that do not exist yet at draft time.
  */
 
 export const QuestionOptionDraft = QuestionOption.omit({ id: true });
 export type QuestionOptionDraft = z.infer<typeof QuestionOptionDraft>;
 
-export const QuestionDraft = Question.omit({
+export const QuestionDraft = QuestionShape.omit({
   id: true,
   sessionId: true,
   turnId: true,
   askedAt: true,
   options: true,
-}).extend({
-  options: optionListRule(QuestionOptionDraft),
-});
+  recommends: true,
+})
+  .extend({
+    options: optionListRule(QuestionOptionDraft),
+    /** 0-based position in `options`, or null for no recommendation. */
+    recommends: z.number().int().nonnegative().nullable().default(null),
+  })
+  .refine((draft) => draft.recommends === null || draft.recommends < draft.options.length, {
+    message: "A recommendation must point at one of this question's own options.",
+    path: ['recommends'],
+  });
 export type QuestionDraft = z.infer<typeof QuestionDraft>;
 
 export interface MaterializeContext {
@@ -39,6 +56,10 @@ export interface MaterializeContext {
  * question output snapshot-comparable. Options are minted here too — an option
  * id the model invented could collide with one from another question, and
  * `validateAnswer` checks selections against exactly these ids.
+ *
+ * The recommendation is translated from an index to the id minted for that
+ * position. An out-of-range index is impossible: the draft schema rejects it,
+ * so by the time a draft reaches here the index is known to be in bounds.
  */
 export function materializeQuestions(
   drafts: readonly QuestionDraft[],
@@ -47,17 +68,20 @@ export function materializeQuestions(
 ): Question[] {
   const askedAt = ctx.clock.now();
 
-  return drafts.map((draft) =>
-    Question.parse({
+  return drafts.map((draft) => {
+    const options = draft.options.map((option) => ({
+      ...option,
+      id: OptionId.parse(ctx.ids.next('option')),
+    }));
+
+    return Question.parse({
       ...draft,
       id: QuestionId.parse(ctx.ids.next('question')),
       sessionId: scope.sessionId,
       turnId: scope.turnId,
       askedAt,
-      options: draft.options.map((option) => ({
-        ...option,
-        id: OptionId.parse(ctx.ids.next('option')),
-      })),
-    }),
-  );
+      options,
+      recommends: draft.recommends === null ? null : (options[draft.recommends]?.id ?? null),
+    });
+  });
 }

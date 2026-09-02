@@ -89,8 +89,8 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 
 ## 3. Status
 
-**Done:** phases 0–6, Phase 7 steps 0–1, Phase 8 steps 1–3.
-**273 tests, 25 files.** `pnpm verify` covers typecheck (3 packages) + lint +
+**Done:** phases 0–6, Phase 7 steps 0–1, Phase 8 steps 1–4.
+**295 tests, 26 files.** `pnpm verify` covers typecheck (3 packages) + lint +
 2 boundary scripts + node-runnable + tests.
 
 **Phase 7 is parked mid-flight and Phase 8 is in progress.** The first live model
@@ -114,8 +114,9 @@ Phase 8 is the redesign that follows. Phase 7 steps 2–4 (the `./server` export
 | 7 CLI — steps 2–4 | **parked** behind Phase 8 |
 | 8 Harness redesign — step 1 (domain) | done — `Decision` tier, promotion, `Gap` deleted |
 | 8 step 2 (wire + codec) | done — 0 optional / 0 union / 1.9 KB, inside every cap |
-| 8 step 3 (adapters) | **done** — three methods behind one port, chosen per request |
-| **8 steps 4–6** | **next** — engine · projections · evals |
+| 8 step 3 (adapters) | done — three methods behind one port, chosen per request |
+| 8 step 4 (engine) | **done** — sufficiency counted, stalling, reasoned questions |
+| **8 steps 5–6** | **next** — projections · evals |
 
 ### What Phase 5 added
 
@@ -241,13 +242,46 @@ Two bugs the new tests caught, both silent:
   downgrading `retryable: true` to false — so a recoverable prompted failure was
   never retried.
 
+### What Phase 8 step 4 changed
+
+The verdict stopped being a model grading its own homework. See DECISIONS.md for
+the reasoning; the shape:
+
+- **Three counted conditions** decide sufficiency: no blocking open items, every
+  required dimension has a Decision behind it, and more Decisions than uncertain
+  items. The middle one is what stops a settled *ratio* being gamed by promoting
+  a single requirement.
+- **Coverage is advisory.** It orders questions and appears in the rationale; it
+  cannot make or block a verdict. Two tests pin both directions.
+- **`stalled` is a session status**, reached after two turns settling nothing new
+  and distinct from `exhausted`. Movement counts `decisions + superseded`, so a
+  supersession reads as progress rather than as a wasted turn.
+- **Questions carry reasoning**: `rationale` required, `commits` required per
+  option, `recommends`/`because` as withholdable fields, `settles` read by the
+  engine when building the settlement map.
+
+Two traps found on the way, both recorded in WEAKNESSES.md:
+
+- `.omit()` throws at **runtime** on a Zod object carrying refinements, and `tsc`
+  is green. Adding cross-field rules to `Question` broke `QuestionDraft` with a
+  fully passing typecheck; the fix is a `QuestionShape` base that drafts derive
+  from.
+- The shared scenario's `answerAll` minted `ans-1` on every turn, so any test
+  running three turns died on a primary-key conflict — exactly the collision
+  Phase 7 predicted for a persisted session.
+
+**One fixture had to get more honest.** Under the old verdict the shared scenario
+reached `sufficient` on two promotions because a scripted assessment said
+coverage was 0.9. It now settles all five required dimensions, two from answers
+and three from the source.
+
 ### The immediate next step
 
-**Phase 8 step 4 — the engine.** Sufficiency as a trajectory: is the settled
-fraction moving, and is stalling its own signal distinct from "exhausted"?
-Coverage dimensions survive as a lens but stop deciding the verdict. `Question`
-gains `rationale`, `recommends` and `because`; `QuestionOption` gains `commits`
-and `settles`.
+**Phase 8 step 5 — projections.** Widen `ProjectionInput` to carry `{ questions,
+answers }`, which closes the Phase 6 weakness (`whatWasAsked` shows resolutions
+but not the question text) and unlocks the ADR-style *"we chose SSO; we
+considered and rejected magic links because …"* — a join across Decision →
+Answer → Question → Option.
 
 Still outstanding from Phase 7 and blocked on API spend: **one real run per
 provider**, reporting cost per turn, whether the `effort` mapping behaves

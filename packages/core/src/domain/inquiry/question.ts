@@ -12,6 +12,29 @@ export const QuestionOption = z.object({
   label: z.string().min(1),
   /** Expands the trade-off behind an option, for choices that aren't self-evident. */
   elaboration: z.string().min(1).nullable().default(null),
+  /**
+   * What choosing this commits you to.
+   *
+   * Required, and that is the point. An option list without consequences is a
+   * menu; with them it is a decision aid. "Magic links" and "magic links — no
+   * password store, but every login needs a working inbox" are the same choice
+   * presented to two different people.
+   *
+   * This is also what QOC's *Criteria* would have provided. Criteria are the part
+   * of QOC that most obviously adds capture burden, and burden is the documented
+   * reason IBIS and QOC were not adopted — so options are compared by what each
+   * one costs you rather than against a shared reusable axis.
+   */
+  commits: z.string().min(1),
+  /**
+   * Open items this option would settle, if chosen.
+   *
+   * Read by the engine: when an answer selects an option, every id here joins the
+   * `settledBy` map alongside `Question.about`. That lets one question settle
+   * different items depending on the answer — "which of these do you actually
+   * need?" closes whichever ones were picked, and only those.
+   */
+  settles: z.array(OpenItemId).default([]),
 });
 export type QuestionOption = z.infer<typeof QuestionOption>;
 
@@ -32,7 +55,22 @@ export const optionListRule = <T extends z.ZodType>(option: T) =>
     })
     .default([]);
 
-export const Question = z.object({
+/**
+ * The fields, without the cross-field rules.
+ *
+ * **Split from `Question` because of a Zod trap that no typechecker sees.**
+ * `.refine()` in Zod 4 attaches a check to the same `ZodObject` rather than
+ * wrapping it, so `Question.omit(...)` still *compiles* — and then throws at
+ * module load with *".omit() cannot be used on object schemas containing
+ * refinements"*. `tsc` is green, `pnpm test` dies on import.
+ *
+ * Drafts derive from this; the refined `Question` below is what anything
+ * parsing a real question uses. Keep any new cross-field rule on `Question`
+ * alone: a draft names its recommendation by *index*, so the "must name one of
+ * this question's options" rule is meaningless there and would reject every
+ * valid draft.
+ */
+export const QuestionShape = z.object({
   id: QuestionId,
   sessionId: SessionId,
   turnId: TurnId,
@@ -63,7 +101,49 @@ export const Question = z.object({
    * a custom answer.
    */
   allowsCustom: z.literal(true).default(true),
-  rationale: z.string().min(1).nullable().default(null),
+  /**
+   * Why this is being asked, in the asker's own words.
+   *
+   * **Required, where it used to be nullable.** Requirely is not a
+   * question-asking machine: a question with no stated reason is a form field,
+   * and the product's claim is that it has already thought the problem through
+   * and is checking its reasoning. Making this optional made it the first thing
+   * a model would drop under output pressure.
+   */
+  rationale: z.string().min(1),
+  /**
+   * The option Requirely would choose, if it had to.
+   *
+   * **A separate field precisely so a UI can withhold it.** Pre-selecting an
+   * option anchors: defaults in AI decision support are documented as strong
+   * anchors, and one clinical survey found 88% of residents had encountered the
+   * effect. Keeping the recommendation out of the option list means a surface can
+   * show the choice first and the opinion second, or not at all — and the eval
+   * suite tracks acceptance rate, because a suspiciously high one is the signal
+   * that Requirely stopped offering a choice and started making it.
+   *
+   * Never a penalty: choosing something else is an ordinary answer, and nothing
+   * in the domain treats it differently.
+   */
+  recommends: OptionId.nullable().default(null),
+  /** Why that recommendation. Present exactly when `recommends` is. */
+  because: z.string().min(1).nullable().default(null),
   askedAt: Timestamp,
 });
+
+export const Question = QuestionShape.refine(
+  (question) => question.recommends === null || question.because !== null,
+  {
+    message: 'A recommendation must say why. Set `because` alongside `recommends`.',
+    path: ['because'],
+  },
+).refine(
+  (question) =>
+    question.recommends === null ||
+    question.options.some((option) => option.id === question.recommends),
+  {
+    message: "A recommendation must name one of this question's own options.",
+    path: ['recommends'],
+  },
+);
 export type Question = z.infer<typeof Question>;

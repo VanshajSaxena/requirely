@@ -115,10 +115,80 @@ burden is the documented reason IBIS and QOC failed to be adopted.
 
 ---
 
+### Sufficiency is counted, not scored (Phase 8)
+
+**The verdict used to be a model grading its own homework.** It took per-dimension
+coverage scores from the same model whose work was being judged, compared them to
+a threshold, and believed the result — unfalsifiable in the direction that
+flatters. What decides now is counted from the stored document:
+
+1. **No blocking open items.**
+2. **Every required dimension has at least one current Decision behind it.**
+3. **More Decisions than uncertain items** — `ratio >= 0.5`, which is the owner's
+   stated goal written as a number.
+
+**Condition 2 is the one that is easy to miss and load-bearing.** A settled
+*ratio* alone is gameable: promote your single requirement and you are at 100%
+after turn one. Requiring a Decision per dimension cannot be gamed that way, and
+it is what "dimensions survive as a lens" actually buys — the dimension becomes
+how the decisions are *sliced*, not a number a model invents about itself.
+
+**Coverage keeps a job, but a demoted one.** It no longer votes. It orders the
+next questions, and it catches what counting cannot: a dimension can hold one
+*shallow* Decision — "users: product managers" settles nothing about their needs
+— and a model scoring `users: 0.3` sees that where a count of 1 does not. So
+`shortfalls` is ordered structurally first (no Decision at all) and by coverage
+score second. Structure decides the band; the model breaks ties inside it.
+
+**Stalling is a status, not just a flag.** Two turns settling nothing new means
+`stalled` — distinct from `exhausted`, and the distinction is the only part a
+user can act on: one says *"give me a bigger budget"*, the other says *"the
+questions are not landing, give me better input"*. Both finalize, because the one
+rule `finalized` enforces is that a verdict was recorded.
+
+Movement is measured as `decisions + superseded`, which is monotonic by
+construction because Decisions are never deleted. Counting only current decisions
+would read a **supersession** — correcting something wrong — as a turn that did
+nothing.
+
+### Questions carry their reasoning (Phase 8)
+
+Requirely is not a question-asking machine, and three schema changes make that
+structural rather than aspirational:
+
+- **`Question.rationale` is required**, where it was nullable. A question with no
+  stated reason is a form field, and an optional field is the first thing a model
+  drops under output pressure.
+- **`QuestionOption.commits` is required.** An option list without consequences is
+  a menu; with them it is a decision aid. This is also what QOC's *Criteria* would
+  have provided — options are compared by what each one costs you rather than
+  against a shared reusable axis, because criteria are the part of QOC that most
+  obviously adds capture burden, and burden is the documented reason it was not
+  adopted.
+- **`recommends` / `because` are separate fields precisely so a UI can withhold
+  them.** Pre-selecting an option anchors — one clinical survey found 88% of
+  residents had encountered the effect from AI decision support — so a surface can
+  show the choice first and the opinion second, or not at all. Choosing against
+  the recommendation is an ordinary answer that nothing in the domain penalises,
+  and the eval suite tracks acceptance rate because a suspiciously high one is the
+  signal that Requirely stopped offering a choice and started making it.
+
+`QuestionOption.settles` earns its place by being read: the engine unions it with
+`Question.about` when building the settlement map, so one question can close
+different items depending on which options were chosen — and an option nobody
+picked settles nothing.
+
+**On the draft, `recommends` is an *index*.** Option ids are minted by
+`materializeQuestions`, so a model cannot name one; it points at a position in its
+own list and the domain translates it. Same rule that split drafts from entities
+in Phase 1.
+
+---
+
 **The model produces evidence; the domain produces decisions.** The model scores
 coverage per dimension and names blocking open items; `decideSufficiency` applies
-an explicit `SufficiencyPolicy` to get the boolean. Raising the bar is changing a
-number, not editing a prompt and re-evaluating everything.
+an explicit `SufficiencyPolicy`. Raising the bar is changing a number, not
+editing a prompt and re-evaluating everything.
 
 **`sufficient` and `budgetExhausted` are independent.** Running out of questions
 must never manufacture sufficiency — that is the difference between a finished

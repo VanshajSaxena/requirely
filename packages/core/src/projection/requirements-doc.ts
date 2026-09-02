@@ -5,6 +5,7 @@ import {
   openItemsAppendix,
   sourcesAppendix,
   unresolvedContradictions,
+  whyItStopped,
 } from './appendices.ts';
 import { withCitations } from './citations.ts';
 import { byOrdinal, DECISION_KIND, label, RISK } from './labels.ts';
@@ -38,11 +39,7 @@ export const renderRequirementsDoc: Projection = (input) => {
   return `${blocks([
     `# ${title}`,
     product.oneLiner === null ? '' : `*${product.oneLiner}*`,
-    `> Understanding revision ${input.revision.revision}${
-      input.session.status === 'exhausted'
-        ? ' · the question budget ran out before everything could be settled'
-        : ''
-    }`,
+    `> Understanding revision ${input.revision.revision}${whyItStopped(input.session.status)}`,
     emptyNotice(understanding),
 
     section('The problem', product.problem ?? ''),

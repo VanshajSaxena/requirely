@@ -29,13 +29,22 @@ const timestamp = '2026-01-01T00:00:00.000Z';
 
 const verdict = SufficiencyVerdict.parse({
   sufficient: false,
-  rationale: 'Not yet sufficient: coverage below the 0.70 bar for: acceptance (0.25).',
+  rationale: 'Not yet sufficient (1 settled, 1 still open): nothing settled yet for: acceptance.',
+  settled: {
+    decisions: 1,
+    superseded: 1,
+    open: 1,
+    ratio: 0.5,
+    dimensions: ['core-behaviour'],
+  },
   coverage: [{ dimension: 'acceptance', score: 0.25, rationale: 'no acceptance criteria stated' }],
   shortfalls: ['acceptance'],
   blockingItemIds: ['req-1'],
   questionsAsked: 2,
   questionBudget: 12,
   budgetExhausted: false,
+  turnsWithoutProgress: 1,
+  stalled: false,
 });
 
 const revision = UnderstandingRevision.parse({
@@ -178,10 +187,22 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
       dimension: 'users',
       about: 'req-1',
       text: 'Who can create an account?',
+      rationale: 'Sign-up policy decides half the auth surface.',
       mode: 'single',
+      // The recommendation fields are exercised here specifically: they are the
+      // ones a UI may withhold, so they are the ones most likely to be dropped
+      // by a storage layer nobody tested them through.
+      recommends: 'opt-2',
+      because: 'Invite-only is reversible; open sign-up is not.',
       options: [
-        { id: 'opt-1', label: 'Anyone' },
-        { id: 'opt-2', label: 'Invited only', elaboration: 'Requires an invite flow.' },
+        { id: 'opt-1', label: 'Anyone', commits: 'Open sign-up, so abuse controls are needed.' },
+        {
+          id: 'opt-2',
+          label: 'Invited only',
+          elaboration: 'Requires an invite flow.',
+          commits: 'Someone has to send invites.',
+          settles: ['req-1'],
+        },
       ],
       askedAt: timestamp,
     }),

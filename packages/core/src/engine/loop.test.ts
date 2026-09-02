@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+  Answer as AnswerSchema,
   UnderstandingAssessment as AssessmentSchema,
   type CoverageDimension,
   type QuestionDraft,
   QuestionDraft as QuestionDraftSchema,
+  Question as QuestionSchema,
   type SufficiencyVerdict,
   type Understanding,
   type UnderstandingAssessment,
   Understanding as UnderstandingSchema,
   SufficiencyVerdict as VerdictSchema,
 } from '../domain/index.ts';
-import { resolveBlockingItems, selectQuestions } from './loop.ts';
+import { resolveBlockingItems, selectQuestions, settlementsFrom } from './loop.ts';
 
 /**
  * The pure parts of the loop. No adapters, so these live in `src/engine/`;
@@ -39,6 +41,7 @@ const verdict = (shortfalls: string[]): SufficiencyVerdict =>
   VerdictSchema.parse({
     sufficient: false,
     rationale: 'scripted',
+    settled: { decisions: 0, superseded: 0, open: 0, ratio: 0, dimensions: [] },
     coverage: [],
     shortfalls,
     blockingItemIds: [],
@@ -52,7 +55,14 @@ const draft = (
   text = 'Question?',
   about: string | null = null,
 ): QuestionDraft =>
-  QuestionDraftSchema.parse({ dimension, about, text, mode: 'single', options: [] });
+  QuestionDraftSchema.parse({
+    dimension,
+    about,
+    text,
+    rationale: 'scripted',
+    mode: 'single',
+    options: [],
+  });
 
 describe('resolveBlockingItems', () => {
   it('unions items flagged blocking with those the assessment named', () => {
@@ -180,5 +190,62 @@ describe('selectQuestions', () => {
 
     expect(selected).toHaveLength(2);
     expect(selected.map((q) => q.dimension)).toEqual(['acceptance', 'users']);
+  });
+});
+
+describe('settlementsFrom', () => {
+  const question = (overrides: Record<string, unknown> = {}) =>
+    QuestionSchema.parse({
+      id: 'qst-1',
+      sessionId: 'ses-1',
+      turnId: 'trn-1',
+      dimension: 'users',
+      text: 'Which of these do you need?',
+      rationale: 'scripted',
+      mode: 'multiple',
+      options: [
+        { id: 'opt-1', label: 'A', commits: 'a', settles: ['req-1'] },
+        { id: 'opt-2', label: 'B', commits: 'b', settles: ['req-2', 'con-1'] },
+      ],
+      askedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    });
+
+  const answer = (selectedOptionIds: string[]) =>
+    AnswerSchema.parse({
+      id: 'ans-1',
+      questionId: 'qst-1',
+      selectedOptionIds,
+      answeredAt: '2026-01-01T00:01:00.000Z',
+    });
+
+  it('settles the item the question was about', () => {
+    const map = settlementsFrom([{ question: question({ about: 'req-9' }), answer: answer([]) }]);
+    expect(map.get('req-9')).toBe('ans-1');
+  });
+
+  it('settles what the chosen options claim to settle, and only those', () => {
+    // The reason `QuestionOption.settles` exists: one question can close
+    // different items depending on the answer. An option nobody picked settles
+    // nothing, which is what makes this safe to trust.
+    const map = settlementsFrom([{ question: question(), answer: answer(['opt-2']) }]);
+
+    expect([...map.keys()].sort()).toEqual(['con-1', 'req-2']);
+    expect(map.has('req-1')).toBe(false);
+  });
+
+  it('settles nothing when the user wrote a custom answer instead of choosing', () => {
+    // A custom answer is always permitted, and it tells us nothing about which
+    // pre-drafted option's consequences the user accepted.
+    const map = settlementsFrom([{ question: question(), answer: answer([]) }]);
+    expect(map.size).toBe(0);
+  });
+
+  it('unions `about` with every chosen option', () => {
+    const map = settlementsFrom([
+      { question: question({ about: 'asm-1' }), answer: answer(['opt-1', 'opt-2']) },
+    ]);
+
+    expect([...map.keys()].sort()).toEqual(['asm-1', 'con-1', 'req-1', 'req-2']);
   });
 });

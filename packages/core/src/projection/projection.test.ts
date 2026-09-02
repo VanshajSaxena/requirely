@@ -224,6 +224,25 @@ describe('honesty appendices — rendered whenever there is something to admit',
     expect(srs).toContain('budget was exhausted');
   });
 
+  it('says something different when the loop stalled rather than ran out', () => {
+    // The two early exits are actionable in opposite directions: one says raise
+    // the budget, the other says the questions stopped landing and better input
+    // is what is needed. Collapsing them into "incomplete" loses that.
+    const srs = project('srs', input(FULL, { status: 'stalled' }));
+
+    expect(srs).toContain('settled nothing new');
+    expect(srs).toContain('better input, not more asking');
+    expect(srs).not.toContain('budget was exhausted');
+  });
+
+  it('carries the same reason into the requirements document', () => {
+    // Shared once in `appendices.ts` rather than written twice: two renderers
+    // each growing their own version of the honesty is two places for it to
+    // quietly diverge.
+    const doc = project('requirements-doc', input(FULL, { status: 'stalled' }));
+    expect(doc).toContain('settled nothing new');
+  });
+
   it('renders unresolved contradictions and omits settled ones from that appendix', () => {
     const srs = project('srs', input());
     expect(srs).toContain('Appendix C — Unresolved contradictions');
@@ -333,6 +352,12 @@ describe('finalizeSession', () => {
 
   it('finalizes an exhausted session too — the document just states what is open', () => {
     expect(finalizeSession(session({ status: 'exhausted' }), 'srs', ctx).status).toBe('finalized');
+  });
+
+  it('finalizes a stalled session, which also carries a recorded verdict', () => {
+    // The one rule `finalized` enforces is "you cannot finalize what you have
+    // not assessed". A stalled session was assessed; it just stopped moving.
+    expect(finalizeSession(session({ status: 'stalled' }), 'srs', ctx).status).toBe('finalized');
   });
 
   it('refuses to finalize what was never assessed', () => {

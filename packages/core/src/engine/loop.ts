@@ -11,6 +11,7 @@ import {
   type InquiryRepository,
   isAnalyzable,
   materializeQuestions,
+  measureProgress,
   type OpenItemId,
   openItems,
   type Question,
@@ -124,6 +125,34 @@ export function selectQuestions(
     );
 }
 
+/**
+ * Which answer settled which open item.
+ *
+ * Two sources, and the second is what `QuestionOption.settles` buys. A question
+ * names one item in `about`; each *option* may name more. So "which of these do
+ * you actually need?" settles whichever ones were selected — and only those,
+ * because an option nobody picked settles nothing.
+ *
+ * Derivable throughout, which is the point: a `Question` carries `about` and an
+ * `Answer` carries its `questionId`, so the model is never asked to transcribe a
+ * 40-character `AnswerId`.
+ */
+export function settlementsFrom(answered: readonly AnsweredQuestion[]): Map<string, AnswerId> {
+  const settled = new Map<string, AnswerId>();
+
+  for (const { question, answer } of answered) {
+    if (question.about !== null) settled.set(question.about, answer.id);
+
+    const chosen = new Set<string>(answer.selectedOptionIds);
+    for (const option of question.options) {
+      if (!chosen.has(option.id)) continue;
+      for (const item of option.settles) settled.set(item, answer.id);
+    }
+  }
+
+  return settled;
+}
+
 /** Pairs each answer with its question, validating before anything costs tokens. */
 async function resolveAnswers(
   deps: EngineDeps,
@@ -194,14 +223,7 @@ export async function runTurn(
 
   const turnId = TurnId.parse(deps.ids.next('turn'));
 
-  // Which answer settled which open item. Derivable — a Question carries `about`
-  // and an Answer carries its questionId — so the model is never asked to state
-  // it, which is what keeps a 40-character AnswerId off the wire.
-  const settledBy = new Map<string, AnswerId>(
-    answered
-      .filter(({ question }) => question.about !== null)
-      .map(({ question, answer }) => [question.about as string, answer.id]),
-  );
+  const settledBy = settlementsFrom(answered);
 
   // Every source the session has, so a model-cited `settledBySourceId` is checked
   // against reality rather than trusted. Loaded here rather than inside applyDelta
@@ -227,13 +249,29 @@ export async function runTurn(
 
   const understanding = analysis.understanding;
 
+  // The stall counter travels on the previous *verdict*, which is the durable
+  // record of what the loop concluded. Phase 3 removed a `listTurns` read for
+  // `Turn.index` because that was derivable from the revision number; this one
+  // is not derivable from anything, and one small read against three model calls
+  // is not a cost worth a new port method or a duplicated counter on `Session`.
+  const priorTurns = await deps.sessions.listTurns(session.id);
+  const priorVerdict = priorTurns.at(-1)?.verdict ?? null;
+
   const verdict = decideSufficiency(
     {
       ...analysis.assessment,
       blockingItemIds: resolveBlockingItems(understanding, analysis.assessment),
     },
     deps.policy,
-    { questionsAsked: session.questionsAsked, questionBudget: session.questionBudget },
+    {
+      questionsAsked: session.questionsAsked,
+      questionBudget: session.questionBudget,
+      settled: measureProgress(understanding),
+      // Measured from the stored revision rather than carried in the session, so
+      // a resumed session picks the trajectory back up for free.
+      previous: previous === null ? null : measureProgress(previous.content),
+      priorTurnsWithoutProgress: priorVerdict?.turnsWithoutProgress ?? 0,
+    },
   );
 
   // Each turn appends exactly one revision, so this number is also the turn's
@@ -260,6 +298,12 @@ export async function runTurn(
     status = 'sufficient';
   } else if (budgetRemaining === 0) {
     status = 'exhausted';
+  } else if (verdict.stalled) {
+    // Checked *after* `exhausted` on purpose: a turn that both ran out of budget
+    // and stalled is still "out of budget", which is the half a user can act on
+    // by raising it. Stalling with budget left is the interesting case — it says
+    // spending the rest will not help.
+    status = 'stalled';
   } else {
     const cap = Math.min(deps.maxQuestionsPerTurn, budgetRemaining);
     const drafted = await generateQuestions(deps, understanding, verdict, cap);

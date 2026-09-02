@@ -59,9 +59,21 @@ export function renderAnswers(answered: readonly AnsweredQuestion[]): string {
     const chosen = answer.selectedOptionIds
       .map((id) => question.options.find((option) => option.id === id)?.label ?? id)
       .join('; ');
+    // The recommendation is rendered as what it is — an opinion the user may
+    // have taken or ignored — because "we suggested X and they picked Y" is
+    // information about the product's judgement that the next turn should have.
+    const recommended = question.options.find((option) => option.id === question.recommends);
+    const followed =
+      recommended === undefined
+        ? ''
+        : answer.selectedOptionIds.includes(recommended.id)
+          ? `  (took our suggestion: ${recommended.label})`
+          : `  (we suggested ${recommended.label}; they chose otherwise)`;
+
     const parts = [
       `- Q [${question.id}] (${question.dimension}${question.about === null ? '' : `, about ${question.about}`}): ${question.text}`,
       chosen.length > 0 ? `  chose: ${chosen}` : '',
+      followed,
       answer.customText !== null ? `  said: ${answer.customText}` : '',
       answer.additionalContext !== null ? `  also: ${answer.additionalContext}` : '',
     ];
@@ -192,7 +204,14 @@ export function buildQuestionsInput(
   const weakest =
     verdict.shortfalls.length > 0
       ? `Weakest dimensions, worst first: ${verdict.shortfalls.join(', ')}.`
-      : 'No dimension is below the bar; target the blocking open items.';
+      : 'Every required dimension has something settled; target the blocking open items.';
+
+  // The trajectory, stated plainly. A model that can see the loop is not moving
+  // is a model that can stop asking variations of a question nobody answered.
+  const movement =
+    verdict.turnsWithoutProgress === 0
+      ? ''
+      : `The last ${verdict.turnsWithoutProgress} turn(s) settled nothing new. Ask about something different, or about what is blocking a decision rather than about more detail.`;
 
   // Only *open* items are sent. Settled decisions are omitted on purpose: sending
   // them invites the model to re-ask something already answered, and a question
@@ -209,6 +228,7 @@ export function buildQuestionsInput(
 
   return join([
     `# Why we are not finished\n${verdict.rationale}\n${weakest}`,
+    movement,
     items,
     `Ask at most ${maxQuestions} questions. Most important first.`,
   ]);

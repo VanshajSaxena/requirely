@@ -17,7 +17,15 @@ import { fixedClock, sequentialIdGenerator } from '../domain/testing/fakes.ts';
 import { type EngineDeps, runTurn, type TurnRequest } from '../engine/loop.ts';
 import { STRATEGIES, type StrategyName } from '../engine/strategies.ts';
 import { ingestText } from '../ingestion/text.ts';
-import { answerAll, SOURCE_TEXT, scriptFor, TURN_1_ASSESSMENT, TURN_1_DELTA } from './scenario.ts';
+import {
+  answerAll,
+  coverage,
+  SOURCE_TEXT,
+  scriptFor,
+  TURN_1_ASSESSMENT,
+  TURN_1_DELTA,
+  TURN_1_QUESTIONS,
+} from './scenario.ts';
 
 /**
  * The whole loop, end to end, with no provider package installed.
@@ -129,10 +137,19 @@ describe('runTurn — the gathering loop', () => {
     expect(result.questions).toHaveLength(2);
     expect(result.session.questionsAsked).toBe(2);
 
-    // The verdict is recorded and readable, not merely computed.
+    // The verdict is recorded and readable, not merely computed. On turn 1
+    // nothing is settled, so *every* required dimension is a shortfall — the
+    // structural signal, ordered by the model's scores inside it.
     expect(result.turn.verdict.sufficient).toBe(false);
-    expect(result.turn.verdict.shortfalls).toEqual(['acceptance', 'users']);
-    expect(result.turn.verdict.rationale).toContain('acceptance (0.20)');
+    expect(result.turn.verdict.shortfalls).toEqual([
+      'acceptance',
+      'users',
+      'purpose',
+      'core-behaviour',
+      'constraints',
+    ]);
+    expect(result.turn.verdict.rationale).toContain('nothing settled yet for');
+    expect(result.turn.verdict.settled).toMatchObject({ decisions: 0, open: 3, ratio: 0 });
   });
 
   it('assigns ids to questions and options rather than trusting the model', async () => {
@@ -170,18 +187,18 @@ describe('runTurn — the gathering loop', () => {
     expect(second.turn.verdict.sufficient).toBe(true);
     expect(second.revision.revision).toBe(1);
 
-    // Two answered items were promoted, so they left their collections and the
-    // decisions array grew. This is the loop's whole job in one assertion.
-    expect(second.revision.content.decisions).toHaveLength(2);
+    // Every open item was promoted and two more decisions came straight from the
+    // source, so nothing is left uncertain. This is the loop's whole job.
+    expect(second.revision.content.decisions).toHaveLength(5);
+    expect(second.revision.content.requirements).toHaveLength(0);
     expect(second.revision.content.constraints).toHaveLength(0);
-    // Turn 1's unanswered requirement survived turn 2 untouched — the property
-    // deltas exist for — while its answered sibling was promoted away.
-    expect(second.revision.content.requirements).toHaveLength(1);
-    expect(second.revision.content.requirements[0]?.id).toBe('req-1');
+    expect(second.turn.verdict.settled).toMatchObject({ decisions: 5, open: 0, ratio: 1 });
 
     // `settledBy` is the engine's derived AnswerId, never a model transcription.
     expect(second.revision.content.decisions[0]?.settledBy).toBe(second.turn.inputAnswerIds[0]);
     expect(second.revision.content.decisions[0]?.promotedFrom).toBe('req-2');
+    // And the source-settled ones name a real source, validated by applyDelta.
+    expect(second.revision.content.decisions[2]?.settledBy).toBe('src-1');
     h.generator.assertScriptDrained();
   });
 
@@ -265,13 +282,107 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
     expect(h.generator.callsFor('generate-questions')).toHaveLength(0);
   });
 
+  it('lands in stalled, not exhausted, when turns stop settling anything', async () => {
+    // Three turns that add nothing new. The first two are ordinary — a turn
+    // spent ingesting legitimately settles nothing — and the third crosses the
+    // policy's patience. Distinct from `exhausted` on purpose: one says "give me
+    // a bigger budget", this one says "the questions are not landing".
+    const stuck = { ...TURN_1_ASSESSMENT, coverage: coverage(0.2) };
+    const nothing = { product: TURN_1_DELTA.product, ops: [] };
+    const questions = {
+      questions: [
+        {
+          dimension: 'purpose',
+          text: 'What is this for?',
+          rationale: 'scripted',
+          mode: 'single',
+          options: [
+            { label: 'A', commits: 'a' },
+            { label: 'B', commits: 'b' },
+          ],
+        },
+      ],
+    };
+
+    const h = harness('separate', {
+      analyze: [TURN_1_DELTA, nothing, nothing],
+      assess: [TURN_1_ASSESSMENT, stuck, stuck],
+      'generate-questions': [questions, questions, questions],
+    });
+    const { session, sourceId } = await seedSession(h, 12);
+
+    let current = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
+    expect(current.turn.verdict.turnsWithoutProgress).toBe(0);
+
+    current = await runAndCommit(
+      current.session,
+      { trigger: 'answers-received', answers: answerAll(current.questions, 2) },
+      h.deps,
+    );
+    // One quiet turn is noise, not a stall.
+    expect(current.turn.verdict.turnsWithoutProgress).toBe(1);
+    expect(current.session.status).toBe('awaiting-answers');
+
+    current = await runAndCommit(
+      current.session,
+      { trigger: 'answers-received', answers: answerAll(current.questions, 3) },
+      h.deps,
+    );
+
+    expect(current.turn.verdict.turnsWithoutProgress).toBe(2);
+    expect(current.turn.verdict.stalled).toBe(true);
+    expect(current.session.status).toBe('stalled');
+    // Stalling is not sufficiency, and there is budget left — that is the whole
+    // distinction. Conflating the two would tell the user the wrong thing to do.
+    expect(current.turn.verdict.sufficient).toBe(false);
+    expect(current.turn.verdict.budgetExhausted).toBe(false);
+  });
+
+  it('carries the stall counter across a full stop and restart', async () => {
+    // The counter lives on the previous turn's verdict, not in memory, so a
+    // resumed session picks the trajectory back up rather than starting over.
+    const stuck = { ...TURN_1_ASSESSMENT, coverage: coverage(0.2) };
+    const nothing = { product: TURN_1_DELTA.product, ops: [] };
+    const h = harness('separate', {
+      analyze: [TURN_1_DELTA, nothing],
+      assess: [TURN_1_ASSESSMENT, stuck],
+      'generate-questions': [TURN_1_QUESTIONS, TURN_1_QUESTIONS],
+    });
+    const { session, sourceId } = await seedSession(h, 12);
+
+    const first = await runAndCommit(
+      session,
+      { trigger: 'initial', sourceIds: [sourceId] },
+      h.deps,
+    );
+    const second = await runAndCommit(
+      first.session,
+      { trigger: 'answers-received', answers: answerAll(first.questions) },
+      h.deps,
+    );
+
+    // Read back from storage rather than from the returned object, which is the
+    // only version of this assertion a resumed process could make.
+    const stored = await h.deps.sessions.listTurns(session.id);
+    expect(stored.at(-1)?.verdict.turnsWithoutProgress).toBe(1);
+    expect(second.turn.verdict.settled.decisions).toBe(0);
+  });
+
   it('caps questions per turn so a round stays answerable', async () => {
     const many = {
       questions: Array.from({ length: 6 }, (_, i) => ({
         dimension: i % 2 === 0 ? 'acceptance' : 'users',
         text: `Question ${i}?`,
+        rationale: 'scripted',
         mode: 'single',
-        options: [{ label: 'A' }, { label: 'B' }],
+        options: [
+          { label: 'A', commits: 'commits to A' },
+          { label: 'B', commits: 'commits to B' },
+        ],
       })),
     };
     const h = harness('separate', {
@@ -305,6 +416,7 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
               dimension: 'acceptance',
               about: 'req-99',
               text: 'Invented target?',
+              rationale: 'scripted',
               mode: 'single',
               options: [],
             },

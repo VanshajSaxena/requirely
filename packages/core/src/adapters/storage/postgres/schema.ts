@@ -153,8 +153,15 @@ export const questions = pgTable('questions', {
   about: text('about'),
   text: text('text').notNull(),
   mode: text('mode').notNull(),
+  // `commits` and `settles` ride inside this JSONB, so an option's consequence
+  // is stored with the option rather than in a parallel table that could drift.
   options: jsonb('options').$type<QuestionOption[]>().notNull(),
-  rationale: text('rationale'),
+  // Not null any more: a question with no stated reason is a form field, and the
+  // domain now refuses to construct one.
+  rationale: text('rationale').notNull(),
+  /** Nullable together — the domain enforces that they are set or unset as a pair. */
+  recommends: text('recommends'),
+  because: text('because'),
   askedAt: timestamp('asked_at', MILLISECOND_UTC).notNull(),
 });
 

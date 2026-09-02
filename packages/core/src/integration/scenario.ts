@@ -92,18 +92,34 @@ export const TURN_1_QUESTIONS = {
       dimension: 'acceptance',
       about: 'req-2',
       text: 'How would you know Requirely had worked?',
+      rationale: 'Nothing states a success condition, so nothing can be accepted against one.',
       mode: 'single',
+      // A recommendation with its reasoning, so the loop test exercises the
+      // anchoring-sensitive path rather than only the neutral one.
+      recommends: 0,
+      because: 'It measures the output rather than the process around it.',
       options: [
-        { label: 'A spec an engineer can build from unaided' },
-        { label: 'Fewer clarification rounds before work starts' },
+        {
+          label: 'A spec an engineer can build from unaided',
+          commits: 'The bar is the document, so gathering continues until it stands alone.',
+        },
+        {
+          label: 'Fewer clarification rounds before work starts',
+          commits: 'Success depends on the team around the spec, not the spec itself.',
+        },
       ],
     },
     {
       dimension: 'users',
       about: 'con-1',
       text: 'Who is the primary user?',
+      rationale: 'Who this serves decides which of the open requirements matter.',
       mode: 'multiple',
-      options: [{ label: 'Product managers' }, { label: 'Engineers' }, { label: 'Founders' }],
+      options: [
+        { label: 'Product managers', commits: 'Wording favours plain language over precision.' },
+        { label: 'Engineers', commits: 'Output leans technical and assumes context.' },
+        { label: 'Founders', commits: 'Speed matters more than completeness.' },
+      ],
     },
   ],
 };
@@ -114,6 +130,15 @@ export const TURN_1_QUESTIONS = {
  * Neither promotion sets `settledBySourceId`: the engine derives the answer from
  * `Question.about`, so a fixture that spelled out an `AnswerId` would be testing
  * a path production never takes.
+ */
+/**
+ * Turn 2 settles every required dimension, which is what sufficiency now costs.
+ *
+ * Under the old verdict this scenario reached `sufficient` on two promotions,
+ * because a scripted assessment said coverage was 0.9 and the threshold believed
+ * it. It cannot any more: sufficiency is counted, and every required dimension
+ * needs a Decision behind it. Two of these come from answers and three from the
+ * source — both paths, in one fixture.
  */
 export const TURN_2_DELTA = delta([
   {
@@ -134,6 +159,34 @@ export const TURN_2_DELTA = delta([
     kind: 'scope',
     dimension: 'users',
     rationale: 'Both were selected; engineers were offered and not chosen.',
+  },
+  {
+    op: 'promote',
+    target: 'decision',
+    id: 'req-1',
+    statement: 'Audio, text and documents all land in one understanding',
+    kind: 'functional',
+    dimension: 'core-behaviour',
+    rationale: 'Stated directly in the brief; nothing contradicts it.',
+    settledBySourceId: 'src-1',
+  },
+  {
+    op: 'add',
+    target: 'decision',
+    statement: 'Requirely exists to make specifying as fast as building',
+    kind: 'scope',
+    dimension: 'purpose',
+    rationale: 'The brief opens with it and everything else follows from it.',
+    settledBySourceId: 'src-1',
+  },
+  {
+    op: 'add',
+    target: 'decision',
+    statement: 'Input arrives unstructured; no format may be required of the user',
+    kind: 'constraint',
+    dimension: 'constraints',
+    rationale: '"Dump everything you know" rules out a structured intake form.',
+    settledBySourceId: 'src-1',
   },
 ]);
 
@@ -180,11 +233,19 @@ export function scriptFor(strategy: StrategyName): FakeScript {
   };
 }
 
-/** Answers every question by picking its first option. */
-export function answerAll(questions: readonly Question[]): Answer[] {
+/**
+ * Answers every question by picking its first option.
+ *
+ * **`turn` is not decoration.** Answer ids are fixture-minted, so a session that
+ * runs three turns mints `ans-1` three times and the second commit fails on a
+ * primary-key conflict. Production never has this problem — ids come from
+ * `IdGenerator` — but a fixture that quietly collided would make a multi-turn
+ * test impossible to write and the reason hard to see.
+ */
+export function answerAll(questions: readonly Question[], turn = 1): Answer[] {
   return questions.map((question, index) =>
     Answer.parse({
-      id: `ans-${index + 1}`,
+      id: `ans-${turn}-${index + 1}`,
       questionId: question.id,
       selectedOptionIds: question.options[0] ? [question.options[0].id] : [],
       answeredAt: AT,

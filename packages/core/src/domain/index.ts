@@ -29,6 +29,7 @@ export * from './shared/usage.ts';
 export * from './source/source.ts';
 export * from './sufficiency/coverage.ts';
 export * from './sufficiency/policy.ts';
+export * from './sufficiency/progress.ts';
 export * from './sufficiency/verdict.ts';
 export * from './turn/commit.ts';
 export * from './turn/turn.ts';

@@ -16,7 +16,9 @@ CREATE TABLE "questions" (
 	"text" text NOT NULL,
 	"mode" text NOT NULL,
 	"options" jsonb NOT NULL,
-	"rationale" text,
+	"rationale" text NOT NULL,
+	"recommends" text,
+	"because" text,
 	"asked_at" timestamp (3) with time zone NOT NULL
 );
 --> statement-breakpoint

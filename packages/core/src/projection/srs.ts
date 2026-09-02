@@ -9,6 +9,7 @@ import {
   openItemsAppendix,
   sourcesAppendix,
   unresolvedContradictions,
+  whyItStopped,
 } from './appendices.ts';
 import { withCitations } from './citations.ts';
 import { byOrdinal, label } from './labels.ts';
@@ -138,9 +139,6 @@ function provenanceNote(input: ProjectionInput): string {
   const understanding = input.revision.content;
   const settled = currentDecisions(understanding).length;
   const open = openItems(understanding).length;
-  const status =
-    input.session.status === 'exhausted'
-      ? ' The question budget was exhausted before everything could be settled.'
-      : '';
+  const status = whyItStopped(input.session.status);
   return `> Generated from understanding revision ${input.revision.revision} of session \`${input.session.id}\` — ${settled} decision${settled === 1 ? '' : 's'} settled, ${open} item${open === 1 ? '' : 's'} still open.${status}`;
 }

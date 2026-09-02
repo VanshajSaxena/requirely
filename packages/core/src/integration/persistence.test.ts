@@ -117,14 +117,16 @@ describe('the loop over Postgres', () => {
 
     expect(turn2.session.status).toBe('sufficient');
     expect(turn2.revision.revision).toBe(1);
-    expect(turn2.revision.content.decisions).toHaveLength(2);
+    expect(turn2.revision.content.decisions).toHaveLength(5);
     expect(turn2.revision.content.constraints).toHaveLength(0);
-    // Turn 1's unpromoted requirement survived a full round-trip through JSONB.
-    expect(turn2.revision.content.requirements).toHaveLength(1);
-    expect(turn2.revision.content.requirements[0]?.id).toBe('req-1');
-    // And so did the promotion lineage — `promotedFrom` is the only record that
-    // `dec-1` used to be `req-2`, so losing it in JSONB would lose the trail.
+    expect(turn2.revision.content.requirements).toHaveLength(0);
+    // The promotion lineage survived a full round-trip through JSONB —
+    // `promotedFrom` is the only record that `dec-1` used to be `req-2`, so
+    // losing it there would lose the trail.
     expect(turn2.revision.content.decisions[0]?.promotedFrom).toBe('req-2');
+    // As did the trajectory, which the *next* turn reads off this verdict.
+    expect(turn2.turn.verdict.settled).toMatchObject({ decisions: 5, open: 0 });
+    expect(turn2.turn.verdict.turnsWithoutProgress).toBe(0);
   });
 
   it('writes nothing when the turn fails, leaving the session resumable', async () => {

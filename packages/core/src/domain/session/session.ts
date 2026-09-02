@@ -14,16 +14,26 @@ export const OutputTarget = z.enum(['srs', 'requirements-doc', 'agent-prompt']);
 export type OutputTarget = z.infer<typeof OutputTarget>;
 
 /**
- * `exhausted` is a first-class state, not a failure: the question budget ran out
- * before sufficiency was reached. The session can still finalize — projections
- * then render an explicit "known gaps and assumptions" section — which is more
- * honest than a confident document that hides its holes.
+ * Three ways a session can stop, and they mean different things.
+ *
+ * - **`sufficient`** — enough is settled to describe what to build.
+ * - **`exhausted`** — the question budget ran out first. *"We were still making
+ *   progress and ran out of room."*
+ * - **`stalled`** — turns are passing and nothing new is getting settled. *"There
+ *   is room left and spending it is not helping."*
+ *
+ * None is a failure, and all three finalize: projections then render what is
+ * still open, which is more honest than a confident document hiding its holes.
+ * Collapsing `stalled` into `exhausted` would lose the only distinction a user
+ * can act on — one says "give me a bigger budget", the other says "the questions
+ * are not landing, give me better input".
  */
 export const SessionStatus = z.enum([
   'gathering',
   'awaiting-answers',
   'sufficient',
   'exhausted',
+  'stalled',
   'finalized',
 ]);
 export type SessionStatus = z.infer<typeof SessionStatus>;
@@ -45,7 +55,13 @@ export type Session = z.infer<typeof Session>;
  * Any of these four is a legitimate outcome of running a turn, from any state —
  * including a finalized session the user reopened by adding a new document.
  */
-const TURN_OUTCOMES = ['gathering', 'awaiting-answers', 'sufficient', 'exhausted'] as const;
+const TURN_OUTCOMES = [
+  'gathering',
+  'awaiting-answers',
+  'sufficient',
+  'exhausted',
+  'stalled',
+] as const;
 
 /**
  * There is really only one rule here: **you cannot finalize what you have not
@@ -63,6 +79,10 @@ const LEGAL_TRANSITIONS: Record<SessionStatus, readonly SessionStatus[]> = {
   'awaiting-answers': TURN_OUTCOMES,
   sufficient: [...TURN_OUTCOMES, 'finalized'],
   exhausted: [...TURN_OUTCOMES, 'finalized'],
+  // Finalizable for the same reason `exhausted` is: a stalled session carries a
+  // recorded verdict explaining why it stopped, which is the one thing
+  // `finalized` actually requires.
+  stalled: [...TURN_OUTCOMES, 'finalized'],
   finalized: TURN_OUTCOMES,
 };
 

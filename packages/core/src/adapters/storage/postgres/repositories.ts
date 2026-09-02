@@ -319,6 +319,8 @@ export function postgresTurnCommitter(db: Database): TurnCommitter {
               mode: question.mode,
               options: [...question.options],
               rationale: question.rationale,
+              recommends: question.recommends,
+              because: question.because,
               askedAt: fromTimestamp(question.askedAt),
             })),
           );

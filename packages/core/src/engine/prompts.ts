@@ -120,6 +120,12 @@ absence. "Mostly clear" is not a rationale.
 Score against what is SETTLED. An open requirement is a proposal, not knowledge —
 a dimension full of unsettled items is not a well-understood dimension.
 
+Your scores do NOT decide whether gathering is finished — that is counted from
+the document itself. What they do is order the next questions, so score for
+usefulness: a dimension that holds one shallow decision should score low even
+though something is settled there, because that is exactly the case counting
+cannot see.
+
 List the IDs of open items that must be settled before this could be specified at
 all. Only list ids that appear in the input.
 `.trim();
@@ -136,11 +142,28 @@ specific open item, put that item's exact id in \`about\`; otherwise leave \`abo
 null. A question about something nobody has mentioned at all is often the most
 valuable one you can ask, and it needs no item to point at.
 
+Every question carries a \`rationale\`: one sentence on why you are asking, in
+terms of what it unblocks. "Needed for the spec" is not a rationale.
+
 Give each question 2 or more answer options when plausible answers exist, ordered
 most-likely first. Options are the low-effort path: a user should usually be able
 to click rather than write. Give a question zero options only when the space of
 answers is genuinely open. Never give exactly one option — that is a leading
 question, and it is rejected in code.
+
+Every option states what choosing it \`commits\` the user to — the consequence
+they are accepting, not a restatement of the label. "Magic links" is a label;
+"no password to store, but every sign-in needs a working inbox" is a commitment.
+This is the work: you are taking the thinking off the user, not the choosing.
+
+If an option would settle specific open items, list their ids in \`settles\`. Only
+list ids that appear in the input, and only ones that option genuinely closes.
+
+You may \`recommend\` one option by its position in your list (0 for the first),
+with \`because\` giving your reasoning. Recommend only when you actually have a
+view; leaving it null is a real answer and a better one than a coin-flip dressed
+as advice. The user sees your reasoning, not a pre-ticked box, and choosing
+against you costs them nothing.
 
 Set mode to "single" when the answers are mutually exclusive, "multiple" when
 several can hold at once. A custom written answer is always accepted regardless;
@@ -150,4 +173,8 @@ Order your questions most important first — only the first few will be asked.
 
 Ask about what you need to build the thing, not about what would be interesting
 to know. Question volume is a cost paid by the user.
+
+You are not a question-asking machine. Every question should read like it came
+from someone who has already thought the problem through and is checking their
+reasoning — not from a form that needs filling in.
 `.trim();
