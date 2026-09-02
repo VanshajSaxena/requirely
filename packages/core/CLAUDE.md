@@ -419,11 +419,36 @@ Three properties of the script that are load-bearing:
   the package self-referenceable, so `from '@requirely/core/adapters/…'` inside `engine/`
   would otherwise have passed both the script and Biome.
 
-## The `exports` map is deliberately one entry
+## The `exports` map has exactly two entries
 
 ```json
-"exports": { "./domain": "./src/domain/index.ts" }
+"exports": {
+  "./domain": "./src/domain/index.ts",
+  "./server": "./src/server.ts"
+}
 ```
+
+**`./server` is a manifest, not a runtime.** It contains re-exports and nothing
+else, enforced by `check-boundaries.sh` rule 7 — two checks, because one was
+gameable: an allowlist over lines (precise, but has to tolerate multi-line
+`export { … } from`) plus a denylist over declaration keywords (imprecise, but
+cannot be slipped past by reformatting). A `createRuntime` written across four
+lines is caught by the first; the same thing on one line is caught only by the
+second.
+
+There is deliberately no `createRuntime()` and no `src/app/` for one to live in.
+Core exports **pieces and contracts**; each app owns exactly one composition
+root. A library that knows how to assemble itself knows about its applications,
+and would grow flags — or split into `createRuntimeForCLI` /
+`createRuntimeForServer` — the moment a second app appeared.
+
+`adapters/registry.ts` is the one exception to "apps do the wiring", and the line
+is worth knowing: it maps the **config enum** to factories, which is a fact about
+*this package's schema* and changes when a provider is added, never when an app
+is. Typed as `Record<ReasoningProvider, …>` so a missing provider fails to
+compile — proved by removing one. `TRANSCRIPTION_ADAPTERS` is typed
+`Record<Exclude<TranscriptionProvider, 'none'>, …>`, which states in the type
+that `none` is a *refusal* rather than a transcriber that returns nothing.
 
 `src/domain/` depends on nothing but `zod` and has no `node:` imports, so it is
 **isomorphic** — safe to bundle into a browser. `engine/`, `adapters/`, `config/` and

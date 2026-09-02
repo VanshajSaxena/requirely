@@ -9,11 +9,19 @@
 # silent pass.
 #
 # Rules:
-#   7.  No frontend package may import a server-only data dependency.
-#   8.  apps/ may import @requirely/core/domain and nothing else under core.
+#   7.  No *browser* package may import a server-only data dependency.
+#   8.  apps/web may import @requirely/core/domain and nothing else under core.
 #   9.  packages/ui knows nothing about the domain.
 #   10. packages/ui may not import from apps/ — a library depending on an app is inverted.
 #   11. packages/ui may not import node: builtins — the kit is isomorphic.
+#   12. apps/cli may import @requirely/core/domain or /server, and nothing deeper.
+#   13. apps/cli may not import ai/@ai-sdk/* — provider-agnostic, extended to the
+#       app layer, which is the first place it has somewhere to leak *to*.
+#
+# Rules 7 and 8 name apps/web explicitly rather than scanning `apps` as a whole.
+# They existed when `apps` meant "the browser", and widening a rule until it
+# stops complaining is how a constraint dies. A CLI legitimately talks to
+# Postgres; what it must not do is reach past core's published surface.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -43,20 +51,37 @@ report() {
 
 # A wrong path here would make every rule below pass while checking nothing, and
 # the script would still print "passed". Fail loudly instead.
-[ -d apps ] && [ -d packages/ui ] || {
-  printf 'Frontend boundary check aborted: apps/ and packages/ui/ not found under %s\n' "$PWD" >&2
+# `apps/cli` is deliberately *not* required: rules 12 and 13 are silent until it
+# exists, which is correct, and the abort guard covers what must always be there.
+[ -d apps/web ] && [ -d packages/ui ] || {
+  printf 'Frontend boundary check aborted: apps/web and packages/ui not found under %s\n' "$PWD" >&2
   exit 1
 }
 
 server_only='drizzle-orm(/.*)?|postgres|@electric-sql/pglite(/.*)?|drizzle-kit(/.*)?|pg-boss'
-report "no frontend package may import a server-only data dependency" \
-  "$(find_imports apps "$server_only"; find_imports packages/ui "$server_only")"
+report "no browser package may import a server-only data dependency" \
+  "$(find_imports apps/web "$server_only"; find_imports packages/ui "$server_only")"
 
 # The engine's own layering rules do not reach across a package boundary, so the
 # allowlist is what keeps postgres and pglite out of the browser bundle. Only
 # src/domain/ is zod-only and therefore safe to ship to a client.
-report "apps/ may import @requirely/core/domain and nothing else under @requirely/core" \
-  "$(find_imports apps '@requirely/core(/.*)?' | grep -vE ': @requirely/core/domain$' || true)"
+report "apps/web may import @requirely/core/domain and nothing else under @requirely/core" \
+  "$(find_imports apps/web '@requirely/core(/.*)?' | grep -vE ': @requirely/core/domain$' || true)"
+
+# Rule 12. The CLI is a server-side app, so `/server` is legitimate — but a deep
+# path into `src/adapters/` would let it depend on core's internals, which is the
+# thing the curated export surface exists to prevent. Node's `exports` map already
+# hard-errors on those at runtime; this catches them at review time, and covers
+# the relative-path escape (`../../packages/core/src/...`) that the map does not.
+report "apps/cli may import only @requirely/core/domain or /server" \
+  "$(find_imports apps/cli '(@requirely/core(/.*)?|(\.\./)+packages/core/.*)' |
+      grep -vE ': @requirely/core/(domain|server)$' || true)"
+
+# Rule 13. The provider-agnostic constraint, extended to the layer that finally
+# has somewhere to leak to. An app that imported `ai` directly would be choosing
+# a vendor above the port rather than behind it.
+report "apps/cli must not import \`ai\`/\`@ai-sdk/*\` — providers live behind a port" \
+  "$(find_imports apps/cli '(ai|@ai-sdk/.*)')"
 
 report "packages/ui must not import @requirely/core — a design system knows no domain" \
   "$(find_imports packages/ui '@requirely/core(/.*)?')"

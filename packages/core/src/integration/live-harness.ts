@@ -26,7 +26,23 @@ export const LIVE = process.env.REQUIRELY_LIVE === '1';
  */
 export const MODEL = process.env.REQUIRELY_LIVE_MODEL ?? 'claude-haiku-4-5';
 
-export const CASSETTES = join(import.meta.dirname, '../../cassettes/live');
+/**
+ * One directory per suite, because they drive different sessions.
+ *
+ * A single shared directory made `hasCassettesFor` answer the wrong question:
+ * *"has anything been recorded for this model?"* rather than *"has what **this
+ * test** needs been recorded?"*. With the live suite recorded and the eval suite
+ * not, the eval's guard returned true and the failure surfaced as
+ * `no cassette at …` three calls deep — the same shape as the orphaned-cassette
+ * trap, arriving by a different route.
+ *
+ * Separate directories make the guard's question and the test's need the same
+ * question, and let the two suites be recorded independently.
+ */
+export const cassettesFor = (suite: string): string =>
+  join(import.meta.dirname, '../../cassettes', suite);
+
+export const CASSETTES = cassettesFor('live');
 export const REPO_ENV = join(import.meta.dirname, '../../../../.env');
 
 /**
@@ -34,13 +50,12 @@ export const REPO_ENV = join(import.meta.dirname, '../../../../.env');
  * recorded them — the body can. Reading it is what stops a replay of one
  * model's session from silently standing in for another's.
  */
-export function hasCassettesFor(model: string): boolean {
+export function hasCassettesFor(model: string, dir: string = CASSETTES): boolean {
   try {
-    return readdirSync(CASSETTES).some(
+    return readdirSync(dir).some(
       (file) =>
         file.endsWith('.json') &&
-        (JSON.parse(readFileSync(join(CASSETTES, file), 'utf8')) as { model?: string }).model ===
-          model,
+        (JSON.parse(readFileSync(join(dir, file), 'utf8')) as { model?: string }).model === model,
     );
   } catch {
     return false;
@@ -63,6 +78,9 @@ export function hasCassettesFor(model: string): boolean {
  */
 export const RUNNABLE = LIVE || hasCassettesFor(MODEL);
 
+/** Whether a named suite can run: recording, or replaying its own cassettes. */
+export const runnableFor = (dir: string): boolean => LIVE || hasCassettesFor(MODEL, dir);
+
 /**
  * Says out loud that nothing ran.
  *
@@ -72,9 +90,9 @@ export const RUNNABLE = LIVE || hasCassettesFor(MODEL);
  * `console.warn`: vitest buffers console output per test and prints nothing for
  * a file where no test ran, which is exactly the case this exists for.
  */
-export function announceSkip(what: string): void {
+export function announceSkip(what: string, dir: string = CASSETTES): void {
   process.stderr.write(
-    `\n[${what}] SKIPPED — no cassettes for "${MODEL}" under ${CASSETTES}\n` +
+    `\n[${what}] SKIPPED — no cassettes for "${MODEL}" under ${dir}\n` +
       `[${what}] record with: REQUIRELY_LIVE=1 pnpm --filter @requirely/core exec vitest run src/integration/\n\n`,
   );
 }

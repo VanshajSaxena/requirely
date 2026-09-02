@@ -1,0 +1,67 @@
+{
+  "operation": "assess",
+  "model": "claude-haiku-4-5",
+  "recordedAt": "2026-09-02T17:59:01.902Z",
+  "preview": {
+    "instructions": "You judge how completely a product is understood — you do NOT decide whether it\nis complete enough. That decision is made elsewhere from your scores.\n\nScore each dimension from 0 to 1:\n- purpose: what this is and why it exists\n- users: who it serves and what they need\n- core-behaviour: what the system actually does\n- data: what it stores and what shape that takes\n- constraints: technical, business, regulatory, operational limits\n- edge-cases: failure modes and boundaries\n- acceptance: how anyone…",
+    "input": "# Understanding to assess\n## Product\none-liner: A tool that captures everything you know about a product and identifies missing pieces\npurpose: Enable teams to systematically consolidate and validate their product understanding by identifying critical gaps\nusers: Product Manager, Development Team, Design Team\n\n## Open requirements\n- [req-1 core-behaviour] (functional) The tool must accept product information as input from the user\n- [req-2 core-behaviour] (functional) The tool must analyze input…"
+  },
+  "value": {
+    "coverage": [
+      {
+        "dimension": "purpose",
+        "score": 0.75,
+        "rationale": "Purpose statement is clear and explicit about consolidating product understanding and identifying gaps; no open requirements on purpose."
+      },
+      {
+        "dimension": "users",
+        "score": 0.45,
+        "rationale": "Three user roles explicitly named but without specification of their needs, workflows, pain points, or role-specific success measures."
+      },
+      {
+        "dimension": "core-behaviour",
+        "score": 0.15,
+        "rationale": "Four open requirements dominate this dimension with blocking req-4 on the gap-analysis framework—the tool's fundamental behavior cannot be understood without this."
+      },
+      {
+        "dimension": "data",
+        "score": 0.05,
+        "rationale": "No data model, persistence strategy, or artifact structure specified; what the system stores and manages is entirely undefined."
+      },
+      {
+        "dimension": "constraints",
+        "score": 0,
+        "rationale": "No technical, operational, regulatory, or business constraints mentioned; dimension not examined."
+      },
+      {
+        "dimension": "edge-cases",
+        "score": 0.05,
+        "rationale": "No failure modes, conflict resolution, or boundary condition handling described; dimension unaddressed."
+      },
+      {
+        "dimension": "acceptance",
+        "score": 0.05,
+        "rationale": "No acceptance criteria, success metrics, or methods to validate correct gap identification specified."
+      },
+      {
+        "dimension": "integrations",
+        "score": 0.1,
+        "rationale": "No integrations with other tools or platforms identified; input sources, output destinations, and ecosystem connections unspecified."
+      }
+    ],
+    "blockingItemIds": [
+      "req-4"
+    ],
+    "summary": "Purpose and user roles are defined, but the blocking requirement (req-4) on the core gap-analysis framework must be resolved before proceeding; data handling, constraints, acceptance criteria, edge cases, and integrations remain entirely unspecified."
+  },
+  "usage": {
+    "operation": "assess",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "inputTokens": 973,
+    "outputTokens": 5266,
+    "costMinorUnits": 2.7303
+  },
+  "method": "constrained",
+  "repairs": []
+}

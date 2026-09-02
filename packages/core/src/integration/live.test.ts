@@ -162,7 +162,12 @@ describe.skipIf(!RUNNABLE)(`the engine against ${MODEL} (${LIVE ? 'RECORDING' : 
   }
 
   it('ingests, analyses, asks, answers and re-evaluates — end to end, real model', {
-    timeout: 180_000,
+    // Sized after the first Phase 8 recording, not guessed. Extended thinking
+    // came back on `analyze` when the wire codec took it out of `jsonTool` mode,
+    // and one turn is now three sequential thinking calls: the original 180s
+    // expired mid-way through the third. This is the *test's* assumption
+    // changing, not the engine's speed regressing.
+    timeout: 600_000,
   }, async () => {
     const h = harness();
     const session = createSession({ questionBudget: 12, title: 'Requirely' }, h.deps);

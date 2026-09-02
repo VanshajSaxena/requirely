@@ -22,7 +22,7 @@ import {
   type SessionMetrics,
   sessionMetrics,
 } from '../observability/session-metrics.ts';
-import { announceSkip, CASSETTES, LIVE, MODEL, REPO_ENV, RUNNABLE } from './live-harness.ts';
+import { announceSkip, cassettesFor, LIVE, MODEL, REPO_ENV, runnableFor } from './live-harness.ts';
 import { answerAll, SOURCE_TEXT, scriptFor } from './scenario.ts';
 
 /**
@@ -205,59 +205,73 @@ describe('the instrument — runs on scripted responses, claims nothing about a 
   });
 });
 
-if (!RUNNABLE) announceSkip('eval');
+/**
+ * Its own cassette directory, not the live suite's.
+ *
+ * These two tests drive *different* sessions, so a shared directory would let
+ * this one's guard pass on the other one's recordings and then fail three calls
+ * deep. One directory per suite makes "can this run?" and "does this have what
+ * it needs?" the same question.
+ */
+const EVAL_CASSETTES = cassettesFor('eval');
+const EVAL_RUNNABLE = runnableFor(EVAL_CASSETTES);
 
-describe.skipIf(!RUNNABLE)(`the readings — ${MODEL} (${LIVE ? 'RECORDING' : 'replay'})`, () => {
-  loadEnvFile(REPO_ENV);
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+if (!EVAL_RUNNABLE) announceSkip('eval', EVAL_CASSETTES);
 
-  /**
-   * `recording(metering(retry(real)))`.
-   *
-   * The meter sits *inside* the recorder so a replay does not re-record, and
-   * *outside* retry so one logical call is one entry with wasted attempts
-   * already folded into its usage.
-   */
-  const liveGenerator = (meter: CallMeter) => (logger: ReturnType<typeof recordingLogger>) =>
-    recordingStructuredGenerator(
-      withMetering(
-        withValidationRetry(
-          anthropicStructuredGenerator({ apiKey: apiKey ?? 'replay-only', model: MODEL }),
-          { logger },
+describe.skipIf(!EVAL_RUNNABLE)(
+  `the readings — ${MODEL} (${LIVE ? 'RECORDING' : 'replay'})`,
+  () => {
+    loadEnvFile(REPO_ENV);
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+
+    /**
+     * `recording(metering(retry(real)))`.
+     *
+     * The meter sits *inside* the recorder so a replay does not re-record, and
+     * *outside* retry so one logical call is one entry with wasted attempts
+     * already folded into its usage.
+     */
+    const liveGenerator = (meter: CallMeter) => (logger: ReturnType<typeof recordingLogger>) =>
+      recordingStructuredGenerator(
+        withMetering(
+          withValidationRetry(
+            anthropicStructuredGenerator({ apiKey: apiKey ?? 'replay-only', model: MODEL }),
+            { logger },
+          ),
+          meter,
         ),
-        meter,
-      ),
-      { cassetteDir: CASSETTES, model: MODEL, mode: LIVE ? 'auto' : 'replay', logger },
-    );
-
-  it('compares both strategies against a real model', async () => {
-    const results: { strategy: StrategyName; run: RunResult; meter: CallMeter }[] = [];
-
-    for (const strategy of ['separate', 'merged'] as const) {
-      const meter = createCallMeter();
-      results.push({
-        strategy,
-        run: await runSession(strategy, liveGenerator(meter), meter),
-        meter,
-      });
-    }
-
-    for (const { strategy, run, meter } of results) {
-      console.info(formatMetrics(strategy.padEnd(8), run.metrics));
-      console.info(
-        `${strategy.padEnd(8)}: methods ${[...new Set(meter.calls.map((c) => c.method))].join(', ')} · ${run.retries} schema retr${run.retries === 1 ? 'y' : 'ies'}`,
+        { cassetteDir: EVAL_CASSETTES, model: MODEL, mode: LIVE ? 'auto' : 'replay', logger },
       );
-    }
 
-    // Asserted loosely on purpose. The point of this test is the *report*: which
-    // configuration is cheaper is a measurement, and pinning an expected number
-    // would turn a finding into a fixture the moment a model changed.
-    for (const { run } of results) {
-      expect(run.metrics.turns).toBeGreaterThan(0);
-      expect(run.metrics.calls).toBeGreaterThan(0);
-    }
+    it('compares both strategies against a real model', async () => {
+      const results: { strategy: StrategyName; run: RunResult; meter: CallMeter }[] = [];
 
-    const [separate, merged] = results;
-    expect(merged?.run.metrics.calls).toBeLessThanOrEqual(separate?.run.metrics.calls ?? 0);
-  });
-});
+      for (const strategy of ['separate', 'merged'] as const) {
+        const meter = createCallMeter();
+        results.push({
+          strategy,
+          run: await runSession(strategy, liveGenerator(meter), meter),
+          meter,
+        });
+      }
+
+      for (const { strategy, run, meter } of results) {
+        console.info(formatMetrics(strategy.padEnd(8), run.metrics));
+        console.info(
+          `${strategy.padEnd(8)}: methods ${[...new Set(meter.calls.map((c) => c.method))].join(', ')} · ${run.retries} schema retr${run.retries === 1 ? 'y' : 'ies'}`,
+        );
+      }
+
+      // Asserted loosely on purpose. The point of this test is the *report*: which
+      // configuration is cheaper is a measurement, and pinning an expected number
+      // would turn a finding into a fixture the moment a model changed.
+      for (const { run } of results) {
+        expect(run.metrics.turns).toBeGreaterThan(0);
+        expect(run.metrics.calls).toBeGreaterThan(0);
+      }
+
+      const [separate, merged] = results;
+      expect(merged?.run.metrics.calls).toBeLessThanOrEqual(separate?.run.metrics.calls ?? 0);
+    });
+  },
+);

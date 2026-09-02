@@ -56,7 +56,32 @@ call than "it decides when we stop" was. The `merged` strategy already folds it
 into one call; if the evals show the ordering barely changes outcomes, dropping
 `assess` entirely is a real option.
 
-**Nothing in Phase 8 has been measured against a real model.** The domain, the
+~~**Nothing in Phase 8 has been measured against a real model.**~~ **Closed for
+the engine, open for the rest.** One `claude-haiku-4-5` session now runs end to
+end and is committed as cassettes: **6 calls, 0 schema retries, all
+`constrained`, $0.2414**. The sentinel-encoded wire compiles at Anthropic — the
+schema it replaced was rejected outright — and the model produced zero
+assumptions on a vague brief, so the "last resort" prompt control holds.
+
+Still unmeasured: **`prompted` generation has never produced a real reply**,
+OpenAI's caps are still guessed, the eval's strategy comparison has no cassettes,
+and the anchoring instrument has never seen a human answer.
+
+**Extended thinking on `analyze` costs 2.5× and nobody has decided it is worth
+it.** Measured on the same fixture and model: with thinking forced off by
+`jsonTool`, a two-turn session was **$0.0954 / 16,411 output tokens**; with the
+wire codec putting `analyze` back on `constrained` at `effort: 'high'`, it is
+**$0.2414 / 46,164**. The Phase 8 write-up called recovering thinking an
+unambiguous win — it is a *trade*, and the eval apparatus is what should settle
+it rather than one run. The knob is `EFFORT.analyze` in `engine/steps.ts`.
+
+**The `stalled` and `sufficient` paths have never been reached live.** The
+recorded session ends `awaiting-answers` after two turns, which is the counted
+verdict working correctly on a one-sentence brief — but it means no real session
+has yet exercised finalization, the projections against real content, or the
+stall detector.
+
+**Older note, superseded above:** The domain, the
 wire, the three generation methods, the counted verdict and the deliberation
 trail are all correct by construction and unvalidated by observation. No
 cassettes exist (the Phase 7 ones were orphaned by the schema change), the org

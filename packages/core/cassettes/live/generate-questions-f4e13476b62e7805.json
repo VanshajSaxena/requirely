@@ -1,0 +1,167 @@
+{
+  "operation": "generate-questions",
+  "model": "claude-haiku-4-5",
+  "recordedAt": "2026-09-02T18:05:16.579Z",
+  "preview": {
+    "instructions": "You write the questions that will close the most uncertainty in the fewest asks.\n\nYou are not a question-asking machine. Every question should feel like it came\nfrom someone who has already thought the problem through and is checking their\nreasoning — not from a form.\n\nEvery question names the coverage `dimension` it serves. If it would settle one\nspecific open item, put that item's exact id in `about`; otherwise leave `about`\nnull. A question about something nobody has mentioned at all is often…",
+    "input": "# Why we are not finished\nNot yet sufficient (0 settled, 4 still open): 1 blocking open item unsettled; nothing settled yet for: purpose, users, core-behaviour, constraints, acceptance; only 0% of items are settled, against a 50% bar.\nWeakest dimensions, worst first: constraints, acceptance, core-behaviour, users, purpose.\n\n## Open items you may target\n- [req-1 core-behaviour] The tool must accept product information as input from the user\n- [req-2 core-behaviour] The tool must analyze input and…"
+  },
+  "value": {
+    "questions": [
+      {
+        "dimension": "purpose",
+        "about": "req-4",
+        "text": "What type of product or service will this tool analyze for gaps in knowledge?",
+        "mode": "single",
+        "allowsCustom": true,
+        "rationale": "The framework to identify gaps is specific to the product domain; we cannot define what categories of gaps matter without knowing whether we're analyzing software, hardware, services, or market positioning.",
+        "because": null,
+        "options": [
+          {
+            "label": "Software/SaaS product",
+            "elaboration": "Features, capabilities, behavior, APIs, integrations, pricing, terms of service",
+            "commits": "Framework will categorize gaps across software-specific dimensions: feature completeness, behavioral consistency, integration scope, pricing clarity, and support boundaries",
+            "settles": []
+          },
+          {
+            "label": "Hardware/Physical product",
+            "elaboration": "Specifications, materials, manufacturing, durability, safety, environmental impact",
+            "commits": "Framework will categorize gaps across product-specific dimensions: specification completeness, safety and regulatory clarity, manufacturing process definition, and sustainability claims",
+            "settles": []
+          },
+          {
+            "label": "Service offering",
+            "elaboration": "Delivery scope, method, service level agreements, pricing, support, contingencies",
+            "commits": "Framework will categorize gaps across service-specific dimensions: scope clarity, delivery method definition, SLA specification, support boundaries, and contingency planning",
+            "settles": []
+          },
+          {
+            "label": "Market positioning and go-to-market",
+            "elaboration": "Value proposition, messaging, customer segmentation, competitive positioning, pricing strategy",
+            "commits": "Framework will categorize gaps across market-specific dimensions: customer clarity, value proposition definition, differentiation, and pricing rationale",
+            "settles": []
+          }
+        ],
+        "recommends": null
+      },
+      {
+        "dimension": "users",
+        "about": null,
+        "text": "Who will use this tool and what problem are they solving?",
+        "mode": "multiple",
+        "allowsCustom": true,
+        "rationale": "Different user roles need different information and care about different gaps; understanding who is asking and why determines what framework will actually be useful to them.",
+        "because": null,
+        "options": [
+          {
+            "label": "Product managers documenting product definition",
+            "elaboration": null,
+            "commits": "Tool must work with incomplete/ambiguous input and help surface hidden thinking gaps; output becomes a specification",
+            "settles": []
+          },
+          {
+            "label": "Go-to-market teams validating marketing claims",
+            "elaboration": null,
+            "commits": "Tool must identify and flag gaps between what marketing says and what the product actually does; output exposes inconsistencies",
+            "settles": []
+          },
+          {
+            "label": "Cross-functional teams aligning on shared understanding",
+            "elaboration": null,
+            "commits": "Tool must surface disagreements between functions and explain gaps in language non-specialists understand",
+            "settles": []
+          },
+          {
+            "label": "Support and documentation teams ensuring coverage",
+            "elaboration": null,
+            "commits": "Tool must work from end-user perspective and identify what customers need to know or do that isn't documented",
+            "settles": []
+          }
+        ],
+        "recommends": null
+      },
+      {
+        "dimension": "constraints",
+        "about": null,
+        "text": "What are your timeline and operating constraints?",
+        "mode": "single",
+        "allowsCustom": true,
+        "rationale": "Timeline and technical boundaries determine whether the framework can be a simple checklist, a structured interactive questionnaire, or a sophisticated AI-assisted system.",
+        "because": null,
+        "options": [
+          {
+            "label": "MVP needed in 1-2 weeks",
+            "elaboration": null,
+            "commits": "Framework must be simple enough to operate without custom tooling; likely a static checklist or questionnaire",
+            "settles": []
+          },
+          {
+            "label": "2-4 weeks available",
+            "elaboration": null,
+            "commits": "Can build interactive tooling with conditional logic and branching; framework can be moderately detailed and context-aware",
+            "settles": []
+          },
+          {
+            "label": "Several weeks to months",
+            "elaboration": null,
+            "commits": "Can build a sophisticated interactive system, possibly with AI assistance; framework can be nuanced and domain-specific without implementation worry",
+            "settles": []
+          },
+          {
+            "label": "Must run offline or in air-gapped environment",
+            "elaboration": null,
+            "commits": "Cannot depend on cloud APIs or external services; framework and tool must be entirely self-contained and portable",
+            "settles": []
+          }
+        ],
+        "recommends": null
+      },
+      {
+        "dimension": "acceptance",
+        "about": null,
+        "text": "How will you know when this tool is working and delivering value?",
+        "mode": "single",
+        "allowsCustom": true,
+        "rationale": "The success criteria clarifies which gaps matter most and what the tool should prioritize, shaping the framework design and interaction model.",
+        "because": null,
+        "options": [
+          {
+            "label": "Gaps are surfaced early, team manually fills them before build/launch",
+            "elaboration": null,
+            "commits": "You're accepting that the tool's value is early discovery, not creating ongoing reference material; success is measured by gaps caught before product work begins",
+            "settles": []
+          },
+          {
+            "label": "Tool becomes the living source of truth for product definition",
+            "elaboration": null,
+            "commits": "You're accepting ongoing maintenance burden and that the tool must support version control, collaboration, and team workflows; success is team adoption and continued use",
+            "settles": []
+          },
+          {
+            "label": "Speeds up time-to-market by catching gaps during discovery",
+            "elaboration": null,
+            "commits": "You're accepting that ROI is comparative and requires a baseline; you'll need to measure this against your previous process to prove value",
+            "settles": []
+          },
+          {
+            "label": "Produces executive and stakeholder confidence in product definition",
+            "elaboration": null,
+            "commits": "You're accepting that gaps must be explained in business and strategic terms, not just technical ones; success is stakeholder buy-in, not complete documentation",
+            "settles": []
+          }
+        ],
+        "recommends": null
+      }
+    ]
+  },
+  "usage": {
+    "operation": "generate-questions",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "inputTokens": 1738,
+    "outputTokens": 8008,
+    "costMinorUnits": 4.1777999999999995
+  },
+  "method": "constrained",
+  "repairs": []
+}
