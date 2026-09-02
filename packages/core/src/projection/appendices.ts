@@ -6,6 +6,7 @@ import {
   type Understanding,
 } from '../domain/index.ts';
 import { describeSource } from './citations.ts';
+import { type Deliberation, deliberations, settledByLabel } from './deliberation.ts';
 import { byOrdinal, DIMENSION, label } from './labels.ts';
 import { blocks, entries, entry, lines, section } from './markdown.ts';
 import type { ProjectionInput } from './types.ts';
@@ -134,36 +135,72 @@ export function sourcesAppendix(input: ProjectionInput): string {
 }
 
 /**
- * What was decided, and what settled it.
+ * What was decided, what was considered, and what settled it.
  *
  * The requirements document only. This is provenance for the *process* rather
  * than for the product: a reviewer deciding whether to trust the spec wants to
  * see which uncertainties were actually chased, and an SRS handed to a builder
  * does not.
  *
- * **Known limitation, and it is the same one Phase 6 recorded.** `settledBy`
- * names an Answer, but Answers and Questions live in the inquiry repository and
- * `ProjectionInput` does not carry them — so this renders the id rather than the
- * question that was asked. Widening `ProjectionInput` to carry `{ questions,
- * answers }` is Step 5, and it is what unlocks the MADR-style "we chose SSO; we
- * considered and rejected magic links because …" that this appendix wants to be.
+ * **This is the appendix Phase 6 could not write.** It recorded the gap
+ * exactly: *"`whatWasAsked` shows resolutions but not the question text, because
+ * Question records live in the inquiry repository which projections don't
+ * receive."* `ProjectionInput` now carries them, so `settledBy` resolves through
+ * Answer → Question → Options into the thing an ADR is actually for — the
+ * alternatives that were on the table and what each one would have cost.
  */
-export function howDecisionsWereSettled(understanding: Understanding): string {
+export function howDecisionsWereSettled(input: ProjectionInput): string {
+  const understanding = input.revision.content;
   const decided = currentDecisions(understanding).sort(byOrdinal);
   if (decided.length === 0) return '';
 
+  const trail = deliberations(input);
+
   return section(
-    'Appendix D — What was decided, and what settled it',
-    entries(
-      decided.map((decision) =>
-        entry(label(decision.id), DIMENSION[decision.dimension], [
-          decision.statement,
-          `because: ${decision.rationale}`,
-          `settled by: ${decision.settledBy}${decision.promotedFrom === null ? '' : ` (previously ${label(decision.promotedFrom)})`}`,
-        ]),
+    'Appendix D — What was decided, and what was considered',
+    blocks([
+      'Each decision below names what settled it. Where a question was asked, the options that were offered and not taken are listed too — an alternative nobody records is an alternative that gets proposed again.',
+      entries(
+        decided.map((decision) => {
+          const deliberation = trail.get(decision.id);
+          return entry(
+            label(decision.id),
+            DIMENSION[decision.dimension],
+            [
+              decision.statement,
+              `because: ${decision.rationale}`,
+              `settled by: ${settledByLabel(decision, deliberation, input.sources)}`,
+              decision.promotedFrom === null ? '' : `previously ${label(decision.promotedFrom)}`,
+              ...consideredLines(deliberation),
+            ].filter((line) => line.length > 0),
+          );
+        }),
       ),
-    ),
+    ]),
   );
+}
+
+/**
+ * The "considered and rejected" half, or nothing.
+ *
+ * A custom answer is rendered *before* the rejected options, because when
+ * someone writes their own answer the interesting fact is that none of the
+ * offered options fitted — the list of what they declined is context for that,
+ * not a substitute for it.
+ */
+function consideredLines(deliberation: Deliberation | undefined): string[] {
+  if (deliberation === undefined) return [];
+
+  return [
+    ...deliberation.chosen.map((option) => `chose: ${option.label} — ${option.commits}`),
+    deliberation.custom === null ? '' : `answered in their own words: ${deliberation.custom}`,
+    ...deliberation.rejected.map(
+      (option) => `considered and rejected: ${option.label} — ${option.commits}`,
+    ),
+    deliberation.overrode === null
+      ? ''
+      : `we suggested ${deliberation.overrode.label}; they chose otherwise`,
+  ].filter((line) => line.length > 0);
 }
 
 /**

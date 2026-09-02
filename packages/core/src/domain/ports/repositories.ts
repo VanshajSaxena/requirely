@@ -67,6 +67,16 @@ export interface UnderstandingRepository {
 /** Read-only. Questions and answers arrive through a turn commit. */
 export interface InquiryRepository {
   findQuestion(id: QuestionId): Promise<Question | null>;
+  /**
+   * Every question ever asked in this session, answered or not.
+   *
+   * Distinct from `listUnansweredQuestions`, which exists to drive the *next*
+   * prompt and therefore excludes exactly the set a projection needs: an
+   * answered question is what a Decision's audit trail is made of. "We chose
+   * SSO; we considered and rejected magic links because …" is a join from
+   * `Decision.settledBy` through here.
+   */
+  listQuestions(sessionId: SessionId): Promise<readonly Question[]>;
   listUnansweredQuestions(sessionId: SessionId): Promise<readonly Question[]>;
   findAnswer(id: AnswerId): Promise<Answer | null>;
   listAnswers(sessionId: SessionId): Promise<readonly Answer[]>;

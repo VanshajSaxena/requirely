@@ -99,6 +99,6 @@ export const renderRequirementsDoc: Projection = (input) => {
     openItemsAppendix(understanding),
     sourcesAppendix(input),
     unresolvedContradictions(understanding),
-    howDecisionsWereSettled(understanding),
+    howDecisionsWereSettled(input),
   ])}\n`;
 };

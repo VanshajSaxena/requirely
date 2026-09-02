@@ -242,6 +242,15 @@ export function postgresInquiryRepository(db: Database): InquiryRepository {
       return row ? toQuestion(row) : null;
     },
 
+    async listQuestions(sessionId: SessionId) {
+      const rows = await db
+        .select()
+        .from(questions)
+        .where(eq(questions.sessionId, sessionId))
+        .orderBy(questions.askedAt, questions.id);
+      return rows.map(toQuestion);
+    },
+
     async listUnansweredQuestions(sessionId: SessionId) {
       const rows = await db
         .select({ question: questions })

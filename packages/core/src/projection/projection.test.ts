@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  Answer,
   finalizeSession,
+  Question,
   Session,
   SessionStateError,
   Source,
@@ -123,10 +125,61 @@ const FULL = {
   ],
 };
 
-const input = (content: Record<string, unknown> = FULL, sessionOverrides = {}) => ({
+/**
+ * The question that settled `dec-1`, with one option taken and two not.
+ *
+ * `ans-1` is what `FULL.decisions[0].settledBy` names, so this is the join the
+ * whole step exists for: Decision → Answer → Question → Options.
+ */
+const QUESTION = Question.parse({
+  id: 'qst-1',
+  sessionId: 'ses-1',
+  turnId: 'trn-1',
+  dimension: 'core-behaviour',
+  about: 'req-9',
+  text: 'How should users sign in?',
+  rationale: 'Sign-in shapes the whole auth surface and nothing states it.',
+  mode: 'single',
+  recommends: 'opt-2',
+  because: 'Magic links avoid storing a password at all.',
+  options: [
+    {
+      id: 'opt-1',
+      label: 'SSO via Okta',
+      commits: 'Every user needs an Okta account.',
+      settles: ['req-9'],
+    },
+    {
+      id: 'opt-2',
+      label: 'Magic links',
+      commits: 'No password to store, but every sign-in needs a working inbox.',
+    },
+    {
+      id: 'opt-3',
+      label: 'Password plus TOTP',
+      commits: 'Full control, and a support burden for resets.',
+    },
+  ],
+  askedAt: AT,
+});
+
+const ANSWER = Answer.parse({
+  id: 'ans-1',
+  questionId: 'qst-1',
+  selectedOptionIds: ['opt-1'],
+  answeredAt: AT,
+});
+
+const input = (
+  content: Record<string, unknown> = FULL,
+  sessionOverrides = {},
+  inquiry: { questions?: Question[]; answers?: Answer[] } = {},
+) => ({
   session: session(sessionOverrides),
   revision: revision(content),
   sources: [source('src-1'), source('src-2')],
+  questions: inquiry.questions ?? [QUESTION],
+  answers: inquiry.answers ?? [ANSWER],
 });
 
 describe('labels — the Phase 3b payoff', () => {
@@ -257,8 +310,7 @@ describe('honesty appendices — rendered whenever there is something to admit',
 
   it('lists sources with how they were derived', () => {
     const withAudio = {
-      session: session(),
-      revision: revision(FULL),
+      ...input(),
       sources: [source('src-1', { kind: 'audio', derivedBy: 'transcription' })],
     };
 
@@ -286,6 +338,68 @@ describe('requirements document', () => {
 
   it('frames assumptions as decisions someone should confirm', () => {
     expect(project('requirements-doc', input())).toContain('not stated by anyone');
+  });
+
+  it('renders the alternatives that were considered and not taken', () => {
+    // The single most valuable thing an ADR provides, and the one Phase 6
+    // recorded as unreachable: "why not X?" answered from a join rather than
+    // from anything duplicated onto the Decision.
+    const doc = project('requirements-doc', input());
+
+    expect(doc).toContain('How should users sign in?');
+    expect(doc).toContain('chose: SSO via Okta');
+    expect(doc).toContain('considered and rejected: Magic links');
+    expect(doc).toContain('every sign-in needs a working inbox');
+    expect(doc).toContain('considered and rejected: Password plus TOTP');
+  });
+
+  it('records when its own recommendation was overridden', () => {
+    // The most informative line in the trail: the product's judgement being
+    // rejected is exactly what a reviewer should see, and what an anchoring
+    // check counts.
+    const doc = project('requirements-doc', input());
+    expect(doc).toContain('we suggested Magic links; they chose otherwise');
+  });
+
+  it('names a source by its label rather than by its id', () => {
+    // `settledBy` is an id, and an id is not an explanation.
+    const doc = project('requirements-doc', input());
+    expect(doc).toContain('settled by: src-1 notes (src-1)');
+  });
+
+  it('renders a custom answer as what it was, not as a missing selection', () => {
+    // When someone writes their own answer the interesting fact is that none of
+    // the offered options fitted — the rejected list is context for that.
+    const doc = project(
+      'requirements-doc',
+      input(
+        FULL,
+        {},
+        {
+          answers: [
+            Answer.parse({
+              id: 'ans-1',
+              questionId: 'qst-1',
+              customText: 'We already run Entra ID, use that.',
+              answeredAt: AT,
+            }),
+          ],
+        },
+      ),
+    );
+
+    expect(doc).toContain('answered in their own words: We already run Entra ID');
+    expect(doc).toContain('considered and rejected: SSO via Okta');
+  });
+
+  it('drops a settledBy that names nothing rather than throwing', () => {
+    // Same asymmetry the engine uses: an unknown reference in a delta must fail
+    // the turn, but an unknown reference while rendering costs one absent
+    // paragraph where throwing costs the whole document.
+    const doc = project('requirements-doc', input(FULL, {}, { questions: [], answers: [] }));
+
+    expect(doc).toContain('DEC-1');
+    expect(doc).not.toContain('considered and rejected');
   });
 
   it('does not carry the process appendix into the SRS', () => {
@@ -328,6 +442,24 @@ describe('agent prompt', () => {
     const prompt = project('agent-prompt', input());
     expect(prompt).toContain('Users sign in via SSO');
     expect(prompt).not.toContain('[src-1]');
+  });
+
+  it('tells the agent what was rejected, because that is the solution space closing', () => {
+    // A departure from "drop anything an agent cannot act on": a rejected option
+    // is precisely actionable. An agent re-proposing magic links costs a review
+    // cycle to rediscover something already written down.
+    const prompt = project('agent-prompt', input());
+
+    expect(prompt).toContain('Already considered and rejected');
+    expect(prompt).toContain('Magic links');
+    expect(prompt).toContain('Do not propose them again');
+    // Compact: the closed door, not the deliberation around it.
+    expect(prompt).not.toContain('we suggested');
+  });
+
+  it('omits that section entirely when nothing was rejected', () => {
+    const prompt = project('agent-prompt', input(FULL, {}, { questions: [], answers: [] }));
+    expect(prompt).not.toContain('Already considered and rejected');
   });
 
   it('still warns against inventing requirements when nothing is outstanding', () => {

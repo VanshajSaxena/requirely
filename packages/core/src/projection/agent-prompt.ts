@@ -1,4 +1,5 @@
 import { currentDecisions, type OpenItem, openItems } from '../domain/index.ts';
+import { deliberations } from './deliberation.ts';
 import { byOrdinal, DECISION_KIND, DIMENSION, label, RISK } from './labels.ts';
 import { blocks, bullet, lines, section } from './markdown.ts';
 import type { Projection } from './types.ts';
@@ -23,6 +24,14 @@ import type { Projection } from './types.ts';
  * The settled/open split does more work for this reader than for either human
  * one. A `Decision` is something to implement; an open item is something to ask
  * about. Handing an agent both under one heading is how a proposal gets built.
+ *
+ * **It also gets the rejected alternatives, which the human documents render as
+ * process provenance and this one renders as a constraint.** That is a deliberate
+ * departure from "drop anything an agent cannot act on": a rejected option is
+ * precisely actionable — it is the solution space closing. An agent that
+ * proposes magic links after the team rejected them costs a review cycle to
+ * rediscover something already written down, which is the exact waste this
+ * product exists to prevent, aimed at its own output.
  */
 export const renderAgentPrompt: Projection = (input) => {
   const understanding = input.revision.content;
@@ -40,6 +49,13 @@ export const renderAgentPrompt: Projection = (input) => {
 
   const statementOf = (item: OpenItem): string =>
     'statement' in item ? item.statement : item.description;
+
+  // Only options that were offered and not taken. Compact on purpose — the
+  // agent needs the shape of the door that is closed, not the deliberation.
+  const trail = deliberations(input);
+  const rejected = decisions.flatMap((decision) =>
+    (trail.get(decision.id)?.rejected ?? []).map((option) => `${option.label} — ${option.commits}`),
+  );
 
   return `${blocks([
     `You are implementing **${name}**.`,
@@ -130,6 +146,16 @@ export const renderAgentPrompt: Projection = (input) => {
                 ),
               ),
             ]),
+          ]),
+    ),
+
+    section(
+      'Already considered and rejected',
+      rejected.length === 0
+        ? ''
+        : blocks([
+            'These were on the table and were not chosen. Do not propose them again; if one now looks unavoidable, say so and explain what changed rather than quietly adopting it.',
+            lines(rejected.map((option) => bullet(option))),
           ]),
     ),
 

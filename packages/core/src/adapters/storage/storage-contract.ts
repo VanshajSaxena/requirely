@@ -380,6 +380,38 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         await stores.committer.commit(fixtures.commit());
       });
 
+      it('lists every question, answered or not', async () => {
+        // `listUnansweredQuestions` exists to drive the *next* prompt and so
+        // excludes exactly the set a projection needs: an answered question is
+        // what a Decision's audit trail is made of.
+        const sessionId = fixtures.session().id;
+        await stores.committer.commit(
+          TurnCommit.parse({
+            ...fixtures.commit({ index: 1 }),
+            questions: [],
+            answers: [
+              Answer.parse({
+                id: 'ans-1',
+                questionId: 'qst-1',
+                selectedOptionIds: ['opt-1'],
+                answeredAt: AT,
+              }),
+            ],
+            turn: { ...fixtures.commit({ index: 1 }).turn, inputAnswerIds: ['ans-1'] },
+          }),
+        );
+
+        expect(await stores.inquiry.listUnansweredQuestions(sessionId)).toHaveLength(0);
+        const all = await stores.inquiry.listQuestions(sessionId);
+        expect(all.map((question) => question.id)).toEqual(['qst-1']);
+        // The reasoning fields survive the round-trip: they are what the trail
+        // is rendered from, and they are the ones a UI may withhold.
+        expect(all[0]?.recommends).toBe('opt-1');
+        expect(all[0]?.because).toBe('It measures the output rather than the process.');
+        expect(all[0]?.options[0]?.commits).toBe('The document has to stand alone.');
+        expect(all[0]?.options[0]?.settles).toEqual(['req-1']);
+      });
+
       it('reports a question as unanswered until an answer exists', async () => {
         expect(await stores.inquiry.listUnansweredQuestions(fixtures.session().id)).toHaveLength(1);
 

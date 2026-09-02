@@ -13,12 +13,13 @@ Phases 0–6 are done, plus Phase 7 steps 0–1 (adapter fixes, cost accounting,
 live harness and the first real model call) and **Phase 8 steps 1–3** (the domain
 reshape — a settled `Decision` tier, promotion, `Gap` deleted — `src/wire/`, the
 sentinel-encoded flat op list the model actually sees, three generation methods
-behind one port, and a sufficiency verdict that is counted rather than scored).
+behind one port, a sufficiency verdict that is counted rather than scored, and
+projections that render the deliberation behind each decision).
 
 **Phase 7 is parked mid-flight.** The first live calls found that providers
 compile strict schemas into decoding grammars and cap their branchiness, and ours
-was 3× over. Phase 8 is that redesign; steps 5–6 (projections, evals) are next,
-and Phase 7 steps 2–4 resume after.
+was 3× over. Phase 8 is that redesign; step 6 (durable evals) is next, and Phase 7
+steps 2–4 resume after.
 
 **Live cassettes are currently absent** — the Phase 7 recordings were orphaned by
 the Phase 8 schema change and re-recording is blocked on the org API spend limit.
@@ -188,6 +189,29 @@ Neither is derived from the other, and a `z.codec` is the only bridge.
 - **Two things are deliberately not expressible**, each pinned by a test: clearing
   a nullable field through a revise (`''` already means unchanged — use retire +
   add), and clearing every user group.
+
+## Projection orientation
+
+Every projection is a pure function of `ProjectionInput`. Nothing there is
+fetched — the caller does that — which is what keeps them snapshot-testable and
+unable to fail.
+
+- **`ProjectionInput` carries `{ questions, answers }` and they are required.** A
+  default of `[]` would let a caller forget and get a quietly thinner document.
+  They exist to turn `Decision.settledBy` from an id into the alternatives that
+  were on the table.
+- **`deliberation.ts` is the join**, shared rather than repeated: Decision →
+  Answer → Question → Options, plus whether a Requirely recommendation was
+  overridden. Nothing is duplicated onto the `Decision` to make it work.
+- **An unresolvable reference is dropped while rendering, never thrown.** An
+  unknown id in a *delta* must fail the turn; the same id while rendering costs
+  one absent paragraph, and throwing would cost the whole document.
+- **The body renders `currentDecisions()`; Appendix A renders what is still open.**
+  An early-stage session therefore produces a thin document with a long appendix,
+  which is the honest shape rather than a defect.
+- **The agent prompt deliberately carries rejected options**, against its own rule
+  of dropping what an agent cannot act on — a rejected option is the solution
+  space closing, and re-proposing one is the waste this product exists to prevent.
 
 ## Domain model orientation
 

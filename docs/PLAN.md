@@ -89,8 +89,8 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 
 ## 3. Status
 
-**Done:** phases 0–6, Phase 7 steps 0–1, Phase 8 steps 1–4.
-**295 tests, 26 files.** `pnpm verify` covers typecheck (3 packages) + lint +
+**Done:** phases 0–6, Phase 7 steps 0–1, Phase 8 steps 1–5.
+**304 tests, 26 files.** `pnpm verify` covers typecheck (3 packages) + lint +
 2 boundary scripts + node-runnable + tests.
 
 **Phase 7 is parked mid-flight and Phase 8 is in progress.** The first live model
@@ -115,8 +115,9 @@ Phase 8 is the redesign that follows. Phase 7 steps 2–4 (the `./server` export
 | 8 Harness redesign — step 1 (domain) | done — `Decision` tier, promotion, `Gap` deleted |
 | 8 step 2 (wire + codec) | done — 0 optional / 0 union / 1.9 KB, inside every cap |
 | 8 step 3 (adapters) | done — three methods behind one port, chosen per request |
-| 8 step 4 (engine) | **done** — sufficiency counted, stalling, reasoned questions |
-| **8 steps 5–6** | **next** — projections · evals |
+| 8 step 4 (engine) | done — sufficiency counted, stalling, reasoned questions |
+| 8 step 5 (projections) | **done** — the ADR trail, from a join rather than duplication |
+| **8 step 6** | **next** — durable evals |
 
 ### What Phase 5 added
 
@@ -275,13 +276,33 @@ reached `sufficient` on two promotions because a scripted assessment said
 coverage was 0.9. It now settles all five required dimensions, two from answers
 and three from the source.
 
+### What Phase 8 step 5 changed
+
+The mechanical half was already done in step 1 — the projections were rebuilt
+onto `currentDecisions()` then. This step did the part the plan called
+non-mechanical.
+
+- **`ProjectionInput` carries `{ questions, answers }`**, required rather than
+  defaulted, closing the Phase 6 gap by construction.
+- **`projection/deliberation.ts`** joins Decision → Answer → Question → Options
+  once, shared by the requirements document and the agent prompt.
+- **Appendix D became the ADR trail**: what was chosen, what was considered and
+  rejected with what each would have cost, and whether Requirely's own
+  recommendation was overridden.
+- **A source-settled decision names its source's label**, not `src-1`.
+- **The agent prompt gets the rejected options** — a departure from "drop anything
+  an agent cannot act on", justified because a rejected option *is* actionable.
+- **`InquiryRepository.listQuestions`** added, since `listUnansweredQuestions`
+  excludes precisely the answered questions a trail is made of.
+
 ### The immediate next step
 
-**Phase 8 step 5 — projections.** Widen `ProjectionInput` to carry `{ questions,
-answers }`, which closes the Phase 6 weakness (`whatWasAsked` shows resolutions
-but not the question text) and unlocks the ADR-style *"we chose SSO; we
-considered and rejected magic links because …"* — a join across Decision →
-Answer → Question → Option.
+**Phase 8 step 6 — durable evals.** `src/integration/strategy.eval.test.ts`: one
+fixture session under each strategy and each generation method, recording calls,
+tokens, cost, repair count and turns-to-sufficient — plus the two instruments the
+design is worried about, recommendation-acceptance rate (anchoring) and
+assumptions per turn. Live under `REQUIRELY_LIVE=1`, replay at zero cost, skip
+loudly when no cassette exists.
 
 Still outstanding from Phase 7 and blocked on API spend: **one real run per
 provider**, reporting cost per turn, whether the `effort` mapping behaves

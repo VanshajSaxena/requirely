@@ -131,6 +131,9 @@ export function inMemoryStores(): MemoryStores {
       const found = db.questions.get(id);
       return found ? clone(found) : null;
     },
+    async listQuestions(sessionId: SessionId) {
+      return [...db.questions.values()].filter((q) => q.sessionId === sessionId).map(clone);
+    },
     async listUnansweredQuestions(sessionId: SessionId) {
       const answered = new Set([...db.answers.values()].map((a) => a.questionId as string));
       return [...db.questions.values()]

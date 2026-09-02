@@ -56,6 +56,12 @@ call than "it decides when we stop" was. The `merged` strategy already folds it
 into one call; if the evals show the ordering barely changes outcomes, dropping
 `assess` entirely is a real option.
 
+**Nothing calls `project()` with real repository data yet.** `ProjectionInput`
+now requires `{ questions, answers }`, and every current caller is a test that
+constructs them by hand. The first real caller is `apps/cli`'s `generate`
+command, which has to fetch `listQuestions` + `listAnswers` alongside the
+revision and sources. Until then, "the join works" is a claim about fixtures.
+
 **`prompted` generation has never run against a real model.** It is covered by
 unit tests and a mock model, which prove the wiring and the repair ladder. What
 they cannot prove is the thing that matters: whether a real model, handed a JSON

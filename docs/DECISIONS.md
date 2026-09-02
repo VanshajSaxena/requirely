@@ -412,9 +412,69 @@ numbering scheme of its own. This change *removed* future work.
 
 ## Projections
 
+### They render the deliberation, not just the decision (Phase 8)
+
+**`ProjectionInput` was widened to `{ session, revision, sources, questions,
+answers }`**, which closes a gap Phase 6 recorded verbatim: *"`whatWasAsked`
+shows resolutions but not the question text, because Question records live in the
+inquiry repository which projections don't receive."*
+
+What that unlocks is the single most valuable thing an ADR provides. MADR's
+most-cited section is *Considered Options with pros and cons*, because "why not
+X?" is the question a specification can otherwise never answer — and the one
+re-asked in every review until someone writes the answer down. It now renders:
+
+```
+**DEC-1** — core behaviour
+  Users sign in via SSO
+  because: Okta is already the org identity provider.
+  settled by: answering "How should users sign in?"
+  previously REQ-9
+  chose: SSO via Okta — Every user needs an Okta account.
+  considered and rejected: Magic links — No password to store, but every sign-in needs a working inbox.
+  considered and rejected: Password plus TOTP — Full control, and a support burden for resets.
+  we suggested Magic links; they chose otherwise
+```
+
+**Nothing is duplicated onto the `Decision` to get that.** `settledBy` names an
+`Answer`, which names its `Question`, which holds every `Option` and what each one
+`commits` you to. Copying the alternatives onto the Decision would denormalise
+what a durable reference already reaches, and would then need keeping in sync
+with the question it came from. This is the payoff for "references, not tags".
+
+Three decisions inside it:
+
+- **`questions` and `answers` are required, not defaulted to `[]`.** A default
+  lets a caller forget and get a quietly thinner document; requiring them makes
+  forgetting a compile error, which is the only version of that message anyone
+  reads.
+- **The join is shared in `projection/deliberation.ts`**, for the same reason the
+  appendices are: three renderers each growing their own version of it is three
+  places for the trail to diverge.
+- **An unresolvable `settledBy` is dropped, not thrown.** Same asymmetry the
+  engine uses — an unknown reference in a *delta* must fail the turn, but an
+  unknown reference while *rendering* costs one absent paragraph where throwing
+  costs the whole document.
+
+**The agent prompt gets the rejected options too, and that is a departure worth
+naming.** Its stated rule is to drop anything an agent cannot act on — which is
+why it drops citations. A rejected option is the opposite: precisely actionable,
+because it is the solution space closing. An agent proposing magic links after
+the team rejected them costs a review cycle to rediscover something already
+written down, which is the exact waste this product exists to prevent, aimed at
+its own output. It renders compactly — the closed door, not the deliberation
+around it.
+
+**`InquiryRepository.listQuestions` was added** because the existing
+`listUnansweredQuestions` excludes exactly the set a trail is made of: an
+*answered* question. One drives the next prompt; the other explains the last
+decision.
+
+---
+
 **Pure functions over a stored revision.** No model call. The `Understanding`
-already holds every requirement, constraint, assumption, gap and citation, so
-rendering is formatting. Free, instant, unit-testable, and unable to invent a
+already holds every decision, open item and citation, and the caller supplies the
+questions and answers behind them, so rendering is formatting. Free, instant, unit-testable, and unable to invent a
 requirement that was never captured. If a projection ever *needs* to generate
 prose, that means the Understanding was thin and the fix belongs upstream in the
 engine.
