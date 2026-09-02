@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { anthropicStructuredGenerator } from '../adapters/ai/anthropic.ts';
 import { type GrammarCaps, type MethodChoice, methodFor } from '../adapters/ai/method.ts';
@@ -23,6 +21,7 @@ import { STRATEGIES } from '../engine/strategies.ts';
 import { ingestText } from '../ingestion/text.ts';
 import { recordingLogger } from '../observability/logger.ts';
 import { UnderstandingDeltaCodec } from '../wire/index.ts';
+import { announceSkip, CASSETTES, LIVE, MODEL, REPO_ENV, RUNNABLE } from './live-harness.ts';
 import { answerAll, SOURCE_TEXT } from './scenario.ts';
 
 /**
@@ -65,51 +64,8 @@ import { answerAll, SOURCE_TEXT } from './scenario.ts';
  * each retry, minting a new cassette key per attempt and paying for all of them.
  */
 
-const LIVE = process.env.REQUIRELY_LIVE === '1';
-/**
- * Deliberately its own variable, not `REQUIRELY_REASONING_MODEL`.
- *
- * The harness wants the cheapest model that can exercise the loop; the app wants
- * the best one it can afford. Sharing a variable would also create an ordering
- * trap: `.env` is loaded inside `harness()`, after this line runs, so reading the
- * app's setting here would silently honour it in some run orders and not others.
- */
-const MODEL = process.env.REQUIRELY_LIVE_MODEL ?? 'claude-haiku-4-5';
-const CASSETTES = join(import.meta.dirname, '../../cassettes/live');
-const REPO_ENV = join(import.meta.dirname, '../../../../.env');
+if (!RUNNABLE) announceSkip('live');
 
-/**
- * Cassettes are matched on a hash, so the filename cannot say which model
- * recorded them — the body can. Reading it is what stops a replay of one
- * model's session from silently standing in for another's.
- */
-function hasCassettesFor(model: string): boolean {
-  try {
-    return readdirSync(CASSETTES).some(
-      (file) =>
-        file.endsWith('.json') &&
-        (JSON.parse(readFileSync(join(CASSETTES, file), 'utf8')) as { model?: string }).model ===
-          model,
-    );
-  } catch {
-    return false;
-  }
-}
-
-/**
- * **This guard answers "was anything ever recorded?", not "is it still valid?"**
- *
- * The cassette key is a hash of `(operation, instructions, input)`, so changing a
- * prompt or a schema does not invalidate a cassette — it *orphans* it, and the
- * next replay throws `no cassette at …` from inside the run rather than skipping
- * here. That happened for real when Phase 8 reshaped the domain: the Phase 7
- * recordings were still present and still named the right model, so this returned
- * true and the failure surfaced three calls deep.
- *
- * The fix when it happens is to delete the orphans, not to widen this check: a
- * cassette recorded against a schema that no longer exists is evidence for a
- * claim that is no longer being made. Deleting them makes the skip honest again.
- */
 /**
  * Anthropic's caps, restated here only so the harness can *report* which method
  * each schema lands on. The adapter owns the real table; duplicating three
@@ -121,20 +77,6 @@ const ANTHROPIC_CAPS_FOR_REPORT: GrammarCaps = {
   union: 16,
   toolModeForbidsThinking: true,
 };
-
-const RUNNABLE = LIVE || hasCassettesFor(MODEL);
-
-if (!RUNNABLE) {
-  // A silent skip reads like a pass. This is the loud version — the suite still
-  // goes green, which is correct (nothing is broken), but the output says why.
-  // `process.stderr` rather than `console.warn`: vitest buffers console output
-  // per test and prints nothing for a file where no test ran, which is exactly
-  // the case this message exists for.
-  process.stderr.write(
-    `\n[live] SKIPPED — no cassettes for "${MODEL}" under ${CASSETTES}\n` +
-      '[live] record with: REQUIRELY_LIVE=1 pnpm --filter @requirely/core exec vitest run src/integration/live.test.ts\n\n',
-  );
-}
 
 /** A line per operation, so a live run reports rather than merely asserts. */
 function report(label: string, usage: readonly Usage[], retries: number): void {

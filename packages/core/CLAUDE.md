@@ -14,12 +14,13 @@ live harness and the first real model call) and **Phase 8 steps 1–3** (the dom
 reshape — a settled `Decision` tier, promotion, `Gap` deleted — `src/wire/`, the
 sentinel-encoded flat op list the model actually sees, three generation methods
 behind one port, a sufficiency verdict that is counted rather than scored, and
-projections that render the deliberation behind each decision).
+projections that render the deliberation behind each decision, and durable
+evals). **Phase 8 is complete.**
 
 **Phase 7 is parked mid-flight.** The first live calls found that providers
 compile strict schemas into decoding grammars and cap their branchiness, and ours
-was 3× over. Phase 8 is that redesign; step 6 (durable evals) is next, and Phase 7
-steps 2–4 resume after.
+was 3× over. Phase 8 was that redesign, and it has landed. **Phase 7 steps 2–4
+resume next**: the `./server` export, `apps/cli`, and the self-gathering run.
 
 **Live cassettes are currently absent** — the Phase 7 recordings were orphaned by
 the Phase 8 schema change and re-recording is blocked on the org API spend limit.
@@ -189,6 +190,31 @@ Neither is derived from the other, and a `z.codec` is the only bridge.
 - **Two things are deliberately not expressible**, each pinned by a test: clearing
   a nullable field through a revise (`''` already means unchanged — use retire +
   add), and clearing every user group.
+
+## Eval orientation
+
+`src/integration/strategy.eval.test.ts` answers *which configuration is better*;
+`live.test.ts` answers *does it work against a real provider*. Different
+questions, two files, one shared `live-harness.ts` so they cannot disagree about
+when to skip.
+
+- **The instrument and the readings are separate, deliberately.** An eval run
+  against a fake measures the *fixture*: `answerAll` picks option zero and the
+  fixture recommends index zero, so it reports 100% recommendation acceptance,
+  which says nothing about anchoring. The fake half claims only that the harness
+  runs and the arithmetic holds; the model half supplies numbers and skips loudly
+  when it cannot.
+- **`sessionMetrics` is pure over what a session already stores.** An instrument
+  that needed new fields would make measuring expensive enough to skip.
+- **`withMetering` exists because a `Turn` cannot carry per-call facts.**
+  `Generated.method` and `Generated.repairs` never reach it, and threading them
+  through `Usage`/`Turn`/the commit/both adapters would pay a schema cost forever
+  for an occasional measurement. **Where you wrap it is the API**: outside
+  `withValidationRetry` counts one entry per logical call; inside it counts
+  attempts.
+- **Two `null`s that are not zeros.** `recommendationAcceptance` is null when
+  nothing was recommended (a rate over zero offers is undefined, and 0% reads as
+  "always disagrees"); `repairs` is null when nothing metered them.
 
 ## Projection orientation
 

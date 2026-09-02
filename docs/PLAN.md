@@ -89,8 +89,8 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 
 ## 3. Status
 
-**Done:** phases 0–6, Phase 7 steps 0–1, Phase 8 steps 1–5.
-**304 tests, 26 files.** `pnpm verify` covers typecheck (3 packages) + lint +
+**Done:** phases 0–6, Phase 7 steps 0–1, **Phase 8 complete**.
+**330 tests, 29 files.** `pnpm verify` covers typecheck (3 packages) + lint +
 2 boundary scripts + node-runnable + tests.
 
 **Phase 7 is parked mid-flight and Phase 8 is in progress.** The first live model
@@ -116,8 +116,9 @@ Phase 8 is the redesign that follows. Phase 7 steps 2–4 (the `./server` export
 | 8 step 2 (wire + codec) | done — 0 optional / 0 union / 1.9 KB, inside every cap |
 | 8 step 3 (adapters) | done — three methods behind one port, chosen per request |
 | 8 step 4 (engine) | done — sufficiency counted, stalling, reasoned questions |
-| 8 step 5 (projections) | **done** — the ADR trail, from a join rather than duplication |
-| **8 step 6** | **next** — durable evals |
+| 8 step 5 (projections) | done — the ADR trail, from a join rather than duplication |
+| 8 step 6 (durable evals) | done — instrument tested; readings blocked on API spend |
+| **7 steps 2–4** | **next** — `./server` export · `apps/cli` · the self-gathering run |
 
 ### What Phase 5 added
 
@@ -295,18 +296,44 @@ non-mechanical.
 - **`InquiryRepository.listQuestions`** added, since `listUnansweredQuestions`
   excludes precisely the answered questions a trail is made of.
 
+### What Phase 8 step 6 changed
+
+- **`observability/session-metrics.ts`** — a pure function over what a session
+  already stores, producing seven derived numbers including the two instruments
+  the design is explicitly worried about.
+- **`adapters/ai/metering.ts`** — a third `StructuredGenerator` decorator, because
+  `Generated.method` and `Generated.repairs` are per-call facts a `Turn` does not
+  carry.
+- **`integration/strategy.eval.test.ts`** — two halves. The instrument half runs
+  always on the fake and claims only that the harness works; the readings half
+  needs a model and skips loudly.
+- **`integration/live-harness.ts`** — the cassette and skip machinery, shared so
+  two model-backed files cannot grow two ideas of what "no cassettes" means.
+
+**What the instrument reports today**, on the fixture session:
+
+```
+separate: sufficient after 2 turn(s), 5 calls · 3764 in / 1339 out
+merged  : sufficient after 2 turn(s), 3 calls · 3579 in / 1350 out
+```
+
+Same outcome, two fewer calls — the only thing a scripted run can honestly
+settle, because it is a property of the engine rather than of a model.
+
 ### The immediate next step
 
-**Phase 8 step 6 — durable evals.** `src/integration/strategy.eval.test.ts`: one
-fixture session under each strategy and each generation method, recording calls,
-tokens, cost, repair count and turns-to-sufficient — plus the two instruments the
-design is worried about, recommendation-acceptance rate (anchoring) and
-assumptions per turn. Live under `REQUIRELY_LIVE=1`, replay at zero cost, skip
-loudly when no cassette exists.
+**Phase 7 steps 2–4, resumed.** The `./server` re-export manifest with boundary
+rules 6/12/13, then `apps/cli` with its own composition root, then the
+self-gathering run.
 
-Still outstanding from Phase 7 and blocked on API spend: **one real run per
-provider**, reporting cost per turn, whether the `effort` mapping behaves
-sensibly, and how often output fails schema validation.
+`apps/cli generate` is also the first real caller of `project()` — every current
+caller builds `ProjectionInput` by hand in a test, so the deliberation join is
+proven against fixtures only.
+
+Blocked on API spend, and the largest gap in the project: **nothing has been
+measured against a real model since the domain was reshaped.** No cassettes, no
+generation-method comparison, no anchoring reading. Everything Phase 8 built is
+correct by construction and unvalidated by observation.
 
 ---
 

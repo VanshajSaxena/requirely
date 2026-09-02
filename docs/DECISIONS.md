@@ -504,6 +504,52 @@ agent cannot follow, states assumptions as decisions it is *inheriting*, and
 renders open gaps as an instruction to stop and ask. Handing a coding agent an
 under-specified brief is the exact failure this product exists to prevent.
 
+## Evals: the instrument and the readings are separate things (Phase 8)
+
+**An eval run against a fake measures the fixture, not the model.** `answerAll`
+picks option zero and the fixture recommends index zero, so a scripted run
+reports *100% recommendation acceptance* — a fact about the fixture and nothing
+whatever about anchoring. Publishing that as a finding would be worse than
+publishing nothing, because it looks like evidence.
+
+So the eval is built in two halves that claim different things:
+
+| Half | Runs | Claims |
+| --- | --- | --- |
+| the **instrument** | always, on the fake | the harness runs a session and the arithmetic holds |
+| the **readings** | `REQUIRELY_LIVE=1`, or replay | what a real model actually does |
+
+`observability/session-metrics.ts` is a **pure function over data the session
+already stores**, unit-tested with no model at all. That constraint shaped it: an
+instrument needing new fields would make measuring expensive enough to skip, and
+a measurement you skip is a design argument you have to win with opinions.
+
+Seven numbers, all derived: calls, tokens and cost; turns-to-sufficient; settled
+ratio; **recommendation acceptance** (the anchoring instrument — a rate near 1.0
+says Requirely stopped offering a choice and started making it); **assumptions per
+turn** (the overuse instrument, counting promoted-away assumptions too, since
+those are precisely the ones that got acted on); and repairs.
+
+Two `null`s that could have been zeros, and both matter:
+
+- **`recommendationAcceptance` is null when nothing was recommended.** A rate over
+  zero offers is undefined; rendering it as 0% reads as "the user always
+  disagrees".
+- **`repairs` is null when nothing was metering them.** "Not observed" and
+  "observed to be none" are different claims — the same rule as
+  `Usage.costMinorUnits`.
+
+**`withMetering` is a third `StructuredGenerator` decorator**, and it exists
+because `Turn` cannot answer the question the evals ask. `Generated.method` and
+`Generated.repairs` are per-*call* facts that never reach a Turn, and threading
+two fields through `Usage`, `Turn`, the commit and both storage adapters — to
+answer a question only an eval asks — would pay a schema cost forever for a
+measurement taken occasionally. **Where you wrap it is the API**: outside
+`withValidationRetry` counts one entry per logical call with retries folded in;
+inside it counts each attempt.
+
+---
+
 ## Patterns worth reusing
 
 - **Pass the mutator in, don't return the mutation.** `runTurn` hands `merge` to

@@ -56,6 +56,16 @@ call than "it decides when we stop" was. The `merged` strategy already folds it
 into one call; if the evals show the ordering barely changes outcomes, dropping
 `assess` entirely is a real option.
 
+**Nothing in Phase 8 has been measured against a real model.** The domain, the
+wire, the three generation methods, the counted verdict and the deliberation
+trail are all correct by construction and unvalidated by observation. No
+cassettes exist (the Phase 7 ones were orphaned by the schema change), the org
+API spend limit blocks recording, and so the eval's readings half skips. In
+particular: `prompted` generation has never produced a real reply, OpenAI's caps
+are guessed, and the anchoring instrument has never seen a human answer. This is
+the single largest gap in the project, and it is a gap in *evidence* rather than
+in code.
+
 **Nothing calls `project()` with real repository data yet.** `ProjectionInput`
 now requires `{ questions, answers }`, and every current caller is a test that
 constructs them by hand. The first real caller is `apps/cli`'s `generate`
