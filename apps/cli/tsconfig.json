@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+
+  // A near-copy of packages/core's, and the duplication is deliberate: every
+  // option below is a claim about *this package's runtime*, not something to be
+  // inherited. `apps/web` must not get any of it.
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+
+    // Node runs this package's .ts directly, so only erasable syntax survives.
+    "erasableSyntaxOnly": true,
+
+    // Required, and not for this package's own imports. There are no project
+    // references, so core's source enters this program through the exports map —
+    // and core's internal specifiers carry `.ts`. Without this, importing
+    // `@requirely/core/server` fails with TS5097 pointing at a file in another
+    // package. `apps/web` needed it for the same reason and had it removed once
+    // core stopped being a dependency there.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}

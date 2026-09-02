@@ -37,7 +37,8 @@ more → it is a library.
 ```
 requirely/
 ├── apps/
-│   └── web/          Next.js — the only deployable today
+│   ├── cli/          the front door: node runs src/main.ts, no build
+│   └── web/          Next.js
 ├── packages/
 │   ├── core/         the engine: domain, loop, adapters, ingestion, config
 │   └── ui/           the design system
@@ -67,6 +68,8 @@ pnpm lint          # biome check --error-on-warnings .   (pnpm lint:fix to apply
 pnpm boundaries    # both boundary scripts
 pnpm node-runnable # prove Node can still execute packages/core (see below)
 pnpm test          # vitest run in packages/core
+
+pnpm cli -- --help # the CLI. `pnpm cli -- new --title "..."` etc.
 
 pnpm dev           # next dev
 pnpm build         # next build

@@ -1,4 +1,4 @@
-import { and, type ExtractTablesWithRelations, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, type ExtractTablesWithRelations, eq, isNull, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   Answer,
@@ -149,6 +149,18 @@ export function postgresSessionRepository(db: Database): SessionRepository {
           target: sessions.id,
           set: { ...values, version: sql`${sessions.version} + 1` },
         });
+    },
+
+    async listRecent(limit: number) {
+      // `updatedAt` descending: activity, not creation. This is also the query
+      // that made `timestamptz` worth the Phase 3a correction — as `text` it
+      // needed a cast, which defeats the index.
+      const rows = await db
+        .select()
+        .from(sessions)
+        .orderBy(desc(sessions.updatedAt), desc(sessions.id))
+        .limit(limit);
+      return rows.map(toSession);
     },
 
     async listTurns(sessionId: SessionId) {

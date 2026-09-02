@@ -550,6 +550,48 @@ inside it counts each attempt.
 
 ---
 
+## The CLI: one composition root, and a port for the human (Phase 7)
+
+**`apps/cli/src/compose.ts` is the only composition root**, and the earlier draft
+that put a `createRuntime()` inside `packages/core` was wrong for a reason the
+file makes visible: every choice in it is a *CLI* choice. Which provider (from
+config, through core's exhaustive registry), which decorators (`withValidationRetry`
+and nothing else — recording belongs to a harness and metering to an eval),
+and lifetime (`close()` exists so a Postgres pool does not outlive a command).
+`apps/api` will make different choices in its own file, sharing nothing but the
+pieces.
+
+**Asking a human is behind a port**, exactly like asking a model. An `Asker`
+with a clack implementation and a scripted one is what makes a full
+`new → add → turn → answer → generate` run a `vitest` test at zero spend — and
+that test is what finally exercises `project()` against **real repository data**,
+closing a weakness that had been recorded since Phase 6.
+
+**The recommendation is never a pre-selection, and this is where that stopped
+being theory.** `clack.select` accepts an `initialValue`; pointing it at
+`Question.recommends` would put the cursor on our opinion and make every other
+option a deliberate move away from it — the documented anchoring effect. So
+`renderQuestion` prints the options first and the recommendation *after* them
+with its reasoning. A test rejects the recommendation and asserts the loop
+handles it identically: no penalty, no different path, no complaint.
+
+**Postgres is the default and `--memory` is explicit.** A CLI's commands are
+separate processes, so an in-memory default means every command starts with an
+empty store and `new` → `add` cannot work at all. That is a fine default for a
+test driving one process and a broken one for a user.
+
+**Connection failures are translated in the app, not the library.** A first run
+against a stopped database otherwise prints `Failed query: CREATE SCHEMA IF NOT
+EXISTS "drizzle"`. Core is right not to guess at a remedy — it does not know a
+`docker-compose.yml` exists. The composition root does, and it also redacts the
+password out of the connection string before printing it.
+
+Commands are grouped by **architectural layer** — session, ingestion, loop,
+projection — rather than one file per verb, mirroring the seam the rest of the
+codebase is organised along.
+
+---
+
 ## Patterns worth reusing
 
 - **Pass the mutator in, don't return the mutation.** `runTurn` hands `merge` to

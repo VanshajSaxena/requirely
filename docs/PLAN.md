@@ -89,8 +89,9 @@ is what lets `apps/web` share the real `Question`/`Answer` schemas and the real
 
 ## 3. Status
 
-**Done:** phases 0–6, Phase 7 steps 0–1, **Phase 8 complete**.
-**330 tests, 29 files.** `pnpm verify` covers typecheck (3 packages) + lint +
+**Done:** phases 0–6, **Phase 8 complete**, Phase 7 steps 0–3.
+**373 core tests + 9 CLI tests.** Only the self-gathering run (Phase 7 step 4)
+remains. `pnpm verify` covers typecheck (3 packages) + lint +
 2 boundary scripts + node-runnable + tests.
 
 **Phase 7 is parked mid-flight and Phase 8 is in progress.** The first live model
@@ -118,7 +119,9 @@ Phase 8 is the redesign that follows. Phase 7 steps 2–4 (the `./server` export
 | 8 step 4 (engine) | done — sufficiency counted, stalling, reasoned questions |
 | 8 step 5 (projections) | done — the ADR trail, from a join rather than duplication |
 | 8 step 6 (durable evals) | done — instrument tested; readings blocked on API spend |
-| **7 steps 2–4** | **next** — `./server` export · `apps/cli` · the self-gathering run |
+| 7 step 2 (`./server`) | done — a manifest, enforced by boundary rule 7 |
+| 7 step 3 (`apps/cli`) | done — one composition root, every command, 9 tests |
+| **7 step 4** | **next** — Requirely gathers its own requirements |
 
 ### What Phase 5 added
 

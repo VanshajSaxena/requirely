@@ -85,6 +85,12 @@ export function inMemoryStores(): MemoryStores {
     async save(session) {
       db.sessions.set(session.id, clone(session));
     },
+    async listRecent(limit: number) {
+      return [...db.sessions.values()]
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+        .slice(0, limit)
+        .map(clone);
+    },
     async listTurns(sessionId: SessionId) {
       return (db.turns.get(sessionId) ?? []).map(clone);
     },

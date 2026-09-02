@@ -11,10 +11,10 @@
     "dev": "pnpm --filter @requirely/web run dev",
     "build": "pnpm --filter @requirely/web run build",
     "start": "pnpm --filter @requirely/web run start",
-    "typecheck": "pnpm --filter @requirely/core run typecheck && pnpm --filter @requirely/ui run typecheck && pnpm --filter @requirely/web run typecheck",
+    "typecheck": "pnpm --filter @requirely/core run typecheck && pnpm --filter @requirely/ui run typecheck && pnpm --filter @requirely/web run typecheck && pnpm --filter @requirely/cli run typecheck",
     "boundaries": "pnpm --filter @requirely/core run boundaries && ./scripts/check-frontend-boundaries.sh",
     "node-runnable": "pnpm --filter @requirely/core run node-runnable",
-    "test": "pnpm --filter @requirely/core run test",
+    "test": "pnpm --filter @requirely/core run test && pnpm --filter @requirely/cli run test",
     "test:watch": "pnpm --filter @requirely/core run test:watch",
     "lint": "biome check --error-on-warnings .",
     "lint:fix": "biome check --write .",
@@ -23,7 +23,8 @@
     "db:migrate": "pnpm --filter @requirely/core run db:migrate",
     "db:studio": "pnpm --filter @requirely/core run db:studio",
     "verify": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm node-runnable && pnpm test",
-    "verify:build": "rm -rf apps/web/.next && pnpm build && ./scripts/check-frontend-artifacts.sh"
+    "verify:build": "rm -rf apps/web/.next && pnpm build && ./scripts/check-frontend-artifacts.sh",
+    "cli": "pnpm --filter @requirely/cli run cli"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

@@ -23,6 +23,15 @@
  *
  * `./domain` remains separate and is the *only* thing a browser may import —
  * everything below is Node-only.
+ *
+ * **Nothing from `domain/` is re-exported here**, which diverges from the Phase 7
+ * plan. The plan listed `createSession`, `finalizeSession` and
+ * `DEFAULT_SUFFICIENCY_POLICY` for a caller's convenience; the cost is two entry
+ * points with overlapping contents, and then a permanent question about which
+ * one a given name comes from. Both are already importable by a server-side app,
+ * so the convenience buys nothing and the ambiguity is real. Each entry means
+ * one thing: `./domain` is *what the model is about*, `./server` is *what runs
+ * it*.
  */
 
 export {

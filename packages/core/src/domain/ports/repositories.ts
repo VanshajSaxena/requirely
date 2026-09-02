@@ -25,6 +25,20 @@ export interface SessionRepository {
   /** For changes made outside a turn — choosing an output target, renaming. */
   save(session: Session): Promise<void>;
   listTurns(sessionId: SessionId): Promise<readonly Turn[]>;
+  /**
+   * Most recently touched sessions first.
+   *
+   * Exists because there was no way to *find* a session: a CLI that printed an
+   * id on `new` and then required the user to keep it would be storing state in
+   * the user's scrollback. The alternative considered and rejected was a
+   * `~/.requirely/last-session` file, which puts durable state outside the
+   * Understanding — the thing invariant #1 forbids.
+   *
+   * Ordered by `updatedAt`, not `createdAt`: "what was I working on" is a
+   * question about activity, and a long-running session would otherwise sink
+   * below sessions started after it and abandoned.
+   */
+  listRecent(limit: number): Promise<readonly Session[]>;
 }
 
 /**

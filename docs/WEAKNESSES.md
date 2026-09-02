@@ -91,7 +91,24 @@ are guessed, and the anchoring instrument has never seen a human answer. This is
 the single largest gap in the project, and it is a gap in *evidence* rather than
 in code.
 
-**Nothing calls `project()` with real repository data yet.** `ProjectionInput`
+~~**Nothing calls `project()` with real repository data.**~~ **Closed.**
+`apps/cli generate` fetches `listQuestions` + `listAnswers` alongside the
+revision and sources, and a CLI test asserts the deliberation trail renders from
+it — the question text, the rejected option, and what that option would have
+cost.
+
+**The CLI's Postgres path has never been run.** There is no Docker in this
+development environment, so every CLI test uses `--memory`, and the Postgres
+branch of `selectStorage` is covered only indirectly by the storage contract
+suite through PGlite. The adapters are proven; the CLI's *composition* of them is
+not. Treat the first `docker compose up -d` run as a smoke test.
+
+**`--memory` makes the CLI single-process only.** `new` prints an id the next
+command cannot find, because the store died with the process. The failure is a
+clear "No session" message rather than anything confusing, but it is still a
+foot-gun for someone reaching for `--memory` to avoid starting a database.
+
+**Superseded note:** `ProjectionInput`
 now requires `{ questions, answers }`, and every current caller is a test that
 constructs them by hand. The first real caller is `apps/cli`'s `generate`
 command, which has to fetch `listQuestions` + `listAnswers` alongside the

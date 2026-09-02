@@ -1,0 +1,27 @@
+{
+  "name": "@requirely/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A front door for the gathering loop. Node runs src/main.ts directly; there is no build.",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "bin": {
+    "requirely": "./src/main.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "cli": "node src/main.ts"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "@requirely/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.4",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

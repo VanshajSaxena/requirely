@@ -380,6 +380,25 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         await stores.committer.commit(fixtures.commit());
       });
 
+      it('lists sessions most recently touched first', async () => {
+        // Ordered by activity, not creation: a long-running session must not
+        // sink below one started after it and abandoned. This is also the query
+        // the Phase 3a `text` → `timestamptz` correction was measured on.
+        const older = fixtures.session({ id: 'ses-older', updatedAt: '2026-01-01T00:00:00.000Z' });
+        const newer = fixtures.session({ id: 'ses-newer', updatedAt: '2026-06-01T00:00:00.000Z' });
+        await stores.sessions.create(older);
+        await stores.sessions.create(newer);
+
+        const recent = await stores.sessions.listRecent(10);
+        const ours = recent.filter((s) => s.id === 'ses-older' || s.id === 'ses-newer');
+        expect(ours.map((s) => s.id)).toEqual(['ses-newer', 'ses-older']);
+      });
+
+      it('honours the limit', async () => {
+        await stores.sessions.create(fixtures.session({ id: 'ses-2' }));
+        expect(await stores.sessions.listRecent(1)).toHaveLength(1);
+      });
+
       it('lists every question, answered or not', async () => {
         // `listUnansweredQuestions` exists to drive the *next* prompt and so
         // excludes exactly the set a projection needs: an answered question is
