@@ -28,6 +28,52 @@ windowing, summarization, or retrieval through the (defined, unimplemented)
 
 ## Open, no verdict yet
 
+### The loop does not close on real input — the biggest gap in the product
+
+**Measured on `requirely.md` against `claude-haiku-4-5`, twice, reproducibly.**
+Turn 1 is strong: the model reads an 11 KB spec, settles 5–8 decisions directly
+from it with real rationales, leaves 6–18 items open, invents at most one
+assumption, and asks four well-targeted questions with real consequences on every
+option. **Turn 2, given four substantive human answers, returns an entirely empty
+delta** — no promotion, no new decision, no revision.
+
+The loop's central promise is `Receive Answers → Re-evaluate`. That step does
+nothing today. Everything downstream of it — sufficiency, stalling, the
+deliberation trail, the generated document — is therefore reachable only in
+tests, because a real session never advances past turn 1.
+
+The plumbing is *not* the problem: the fake-backed integration test folds answers
+in and promotes correctly, so `renderAnswers` → `buildAnalyzeInput` → `analyze`
+works. What is missing is that **nothing tells the model an answer is a settling
+event.** `ANALYZE_INSTRUCTIONS` mentions answers once, in passing, and the
+`TIERS` block explains *how* to promote without ever saying *when*. By turn 2 the
+answers sit far down a long input, behind a much larger "current understanding"
+block.
+
+Three things to try, cheapest first:
+
+1. **Say it in the prompt.** An explicit instruction that every answered question
+   should produce a promotion or an explicit note of why it could not.
+2. **Move the answers to the top of the input**, or repeat them at the end.
+   `engine/context.ts` is the single token seam, so this is a one-file change.
+3. **Check whether it is a model-capability limit** by running the same session on
+   `claude-opus-5`. This is exactly what the eval harness exists to answer.
+
+Until one of them lands, treat "Requirely can gather requirements end to end" as
+**unproven**.
+
+### A prompt that names a failure mode suppresses the behaviour near it
+
+Measured accidentally, and worth remembering. Adding *"An `add` with an empty
+`settledBySourceId` is rejected and the whole turn is lost. Never leave both
+empty."* to the tier instructions dropped turn-1 decisions from **8 to 1**.
+Softening the same guidance to *"settle generously when the input actually
+settles something"* recovered it to **5**. Same model, same input, same schema.
+
+Prompts are not documentation: a warning about a failure reads as a warning about
+the *operation*, and the model routes around both. Prefer stating the correct
+move to describing the incorrect one.
+
 **Constraint violations surface as raw driver errors.** Postgres throws a
 `postgres.js` error with code `23505`; the in-memory adapter throws a plain
 `Error`. Neither is a domain error type, so a caller cannot tell "duplicate" from

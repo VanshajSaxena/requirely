@@ -41,6 +41,24 @@ export const QuestionDraft = QuestionShape.omit({
   .refine((draft) => draft.recommends === null || draft.recommends < draft.options.length, {
     message: "A recommendation must point at one of this question's own options.",
     path: ['recommends'],
+  })
+  /**
+   * The same pairing rule the entity enforces, and it has to be **here** too.
+   *
+   * Found by the first self-gathering run. The rule lived only on `Question`, so
+   * a model that set `recommends` and omitted `because` produced a *valid draft*
+   * — `withValidationRetry` saw a success, never re-asked, and the failure
+   * surfaced later inside `materializeQuestions` as an unrecoverable crash on a
+   * call that had already been paid for.
+   *
+   * The general rule this taught: **the draft is what a model is held to.** Any
+   * constraint a model can violate belongs on the draft, or violating it costs a
+   * turn instead of a retry. A rule that exists only on the entity is a rule the
+   * model can never be told about.
+   */
+  .refine((draft) => draft.recommends === null || draft.because !== null, {
+    message: 'A recommendation must say why. Set `because` alongside `recommends`, or set neither.',
+    path: ['because'],
   });
 export type QuestionDraft = z.infer<typeof QuestionDraft>;
 

@@ -121,7 +121,7 @@ Phase 8 is the redesign that follows. Phase 7 steps 2–4 (the `./server` export
 | 8 step 6 (durable evals) | done — instrument tested; readings blocked on API spend |
 | 7 step 2 (`./server`) | done — a manifest, enforced by boundary rule 7 |
 | 7 step 3 (`apps/cli`) | done — one composition root, every command, 9 tests |
-| **7 step 4** | **next** — Requirely gathers its own requirements |
+| 7 step 4 (self-gathering) | **run** — turn 1 is strong, turn 2 folds nothing back in |
 
 ### What Phase 5 added
 
@@ -323,11 +323,42 @@ merged  : sufficient after 2 turn(s), 3 calls · 3579 in / 1350 out
 Same outcome, two fewer calls — the only thing a scripted run can honestly
 settle, because it is a property of the engine rather than of a model.
 
+### What Phase 7 step 4 found
+
+`requirely.md` fed through the real pipeline on `claude-haiku-4-5`, twice.
+
+**Turn 1 is genuinely good.** From an 11 KB spec it settles 5–8 decisions
+directly from the source with real rationales — including the spec's central
+claim, *"the core product is the requirement-gathering loop itself, not document
+generation"* — leaves 6–18 items open across the right dimensions, invents at
+most one assumption, scores its own coverage honestly (purpose 0.85, everything
+else 0.25–0.45), and asks four well-targeted questions where every option states
+a real consequence.
+
+**Turn 2 returns an empty delta.** Four substantive human answers produced no
+promotion, no decision, no revision — reproducibly. The loop's central promise,
+`Receive Answers → Re-evaluate`, does not happen. See WEAKNESSES.md for the
+diagnosis and the three things to try.
+
+Two bugs and one regression came out of it, all fixed or recorded:
+
+- **A cross-field rule on the entity but not the draft is unrecoverable.**
+  `recommends` without `because` passed `QuestionDraft`, so the retry decorator
+  saw a success and the failure surfaced in `materializeQuestions` after the call
+  was paid for. The rule now lives on the draft. **General rule: a constraint the
+  model can violate must be checked where the retry loop can see it.**
+- **There is no wire path for "an answer settled something that was not already an
+  open item."** `promote` derives the answer from `Question.about`; `add` can only
+  cite a source. Recorded, not yet fixed.
+- **A prompt that names a failure mode suppresses the behaviour near it.** Adding
+  a warning about rejected `add`s dropped turn-1 decisions from 8 to 1; softening
+  it to positive guidance recovered 5.
+
 ### The immediate next step
 
-**Phase 7 steps 2–4, resumed.** The `./server` re-export manifest with boundary
-rules 6/12/13, then `apps/cli` with its own composition root, then the
-self-gathering run.
+**Close the loop.** Everything else is built and tested; the one thing that does
+not work is the step the product is named for. Start with the prompt and the
+position of the answers in `engine/context.ts`, then compare models.
 
 `apps/cli generate` is also the first real caller of `project()` — every current
 caller builds `ProjectionInput` by hand in a test, so the deliberation join is

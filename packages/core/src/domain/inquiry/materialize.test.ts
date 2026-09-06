@@ -94,6 +94,17 @@ describe('the draft schema, which is what a model is held to', () => {
     ).toThrow();
   });
 
+  it('rejects a recommendation with no reasoning, at the draft level', () => {
+    // Not just on the entity. Found live: with the rule only on `Question`, a
+    // model omitting `because` produced a valid draft, so the retry decorator
+    // saw a success and the failure surfaced inside `materializeQuestions` —
+    // after the call was paid for, as a crash instead of one more attempt.
+    expect(() => draft({ recommends: 0 })).toThrow(/must say why/);
+    expect(() => draft({ recommends: 0, because: 'it is cheapest' })).not.toThrow();
+    // Neither is fine: having no view is a real answer.
+    expect(() => draft({ recommends: null, because: null })).not.toThrow();
+  });
+
   it('rejects a question with no stated reason for asking', () => {
     expect(() => draft({ rationale: undefined })).toThrow();
   });
