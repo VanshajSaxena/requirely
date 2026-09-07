@@ -62,6 +62,42 @@ Three things to try, cheapest first:
 Until one of them lands, treat "Requirely can gather requirements end to end" as
 **unproven**.
 
+#### Update — measured on a *small* input, and the diagnosis above is incomplete
+
+**Run: a 353-byte brief, `claude-haiku-4-5`, real Postgres, through the CLI.**
+Turn 1 was again strong — three decisions that matched exactly what the brief
+actually decided, two open items for exactly what it did not, one of them
+correctly flagged blocking. Turn 2, given answers, **did not return an empty
+delta.** It tried to settle, and the domain rejected the whole turn:
+
+```
+Delta references 1 unknown decision (settledBySourceId) id(s):
+  qst-01a07d2c-24fb-77ff-87be-bd6a26e2f6d3
+```
+
+That is the **wire gap firing for real**, not the prompt gap. The model had an
+answer, wanted to record what settled a decision, and the only field available is
+`settledBySourceId` — so it put the *question id* there, which is the closest
+thing to an answer handle the prompt ever shows it. `renderAnswers` prints
+`Q [qst-<uuid>]`, so we display an identifier and then reject every use of it.
+
+Three corrections this forces to the entry above:
+
+- **"Turn 2 does nothing" was an over-generalisation from one input size.** On a
+  short brief the model does attempt to fold answers in. The empty deltas on the
+  11 KB spec may be a context-length effect rather than the same failure.
+- **The failure is fatal, not silent.** `UnknownReferenceError` is thrown from
+  `applyDelta` inside `merge`, which `strategies.ts` calls *between* the analyze
+  and assess calls — outside the generator — so `withValidationRetry` structurally
+  cannot see it. The turn is paid for and lost.
+- **Ordering: the wire gap now looks like the first thing to fix**, not the
+  prompt. Prompt changes cannot help a model that has no legal field to write.
+
+**Confirmed working in the same run, and worth stating:** the failed turn wrote
+**nothing** — 1 turn, 1 revision, 0 answers, unchanged. Phase 3's `TurnCommit`
+design (read and compute, then persist in one transaction) is now proven against
+real Postgres by a real failure rather than by a test that simulated one.
+
 ### A prompt that names a failure mode suppresses the behaviour near it
 
 Measured accidentally, and worth remembering. Adding *"An `add` with an empty
@@ -250,6 +286,16 @@ against a schema that no longer exists is evidence for a claim nobody is making 
 not to widen the guard.
 
 ---
+
+### `--script` replays from the start in every process
+
+A CLI command is a process, and the fake generator's queue does not outlive one.
+So a scripted multi-command session replays `analyze[0]` each time rather than
+advancing — which is why `apps/cli/fixtures/` ships two files instead of one.
+Not a defect, but it means a terminal-driven scripted session and the
+single-process `session.test.ts` are proving slightly different things. If this
+ever needs to be one file, the mechanism is a turn counter read from the session
+rather than a queue index.
 
 ## Sharp edges (things that cost hours)
 

@@ -1,0 +1,179 @@
+{
+  "analyze": [
+    {
+      "product": {
+        "name": "Roomly",
+        "oneLiner": "Book a meeting room without arguing in Slack",
+        "problem": "",
+        "purpose": "",
+        "users": []
+      },
+      "ops": [
+        {
+          "op": "promote",
+          "target": "decision",
+          "id": "req-1",
+          "statement": "Availability comes from Google Calendar, not manual entry",
+          "kind": "functional",
+          "category": "",
+          "risk": "",
+          "priority": "",
+          "dimension": "core-behaviour",
+          "blocking": "",
+          "basis": "",
+          "rationale": "Manual entry was offered and rejected: nobody would keep it current.",
+          "settledBySourceId": "",
+          "supersedes": "",
+          "reason": "",
+          "provenance": []
+        },
+        {
+          "op": "promote",
+          "target": "decision",
+          "id": "req-2",
+          "statement": "Any employee may book; no approval step",
+          "kind": "scope",
+          "category": "",
+          "risk": "",
+          "priority": "",
+          "dimension": "users",
+          "blocking": "",
+          "basis": "",
+          "rationale": "Approval was considered and dropped as friction nobody asked for.",
+          "settledBySourceId": "src-1",
+          "supersedes": "",
+          "reason": "",
+          "provenance": []
+        },
+        {
+          "op": "add",
+          "target": "decision",
+          "id": "",
+          "statement": "Roomly exists to stop room-booking arguments",
+          "kind": "scope",
+          "category": "",
+          "risk": "",
+          "priority": "",
+          "dimension": "purpose",
+          "blocking": "",
+          "basis": "",
+          "rationale": "Stated directly in the brief.",
+          "settledBySourceId": "src-1",
+          "supersedes": "",
+          "reason": "",
+          "provenance": []
+        },
+        {
+          "op": "add",
+          "target": "decision",
+          "id": "",
+          "statement": "Must work on a phone in a corridor",
+          "kind": "constraint",
+          "category": "",
+          "risk": "",
+          "priority": "",
+          "dimension": "constraints",
+          "blocking": "",
+          "basis": "",
+          "rationale": "Booking happens on the way to the room.",
+          "settledBySourceId": "src-1",
+          "supersedes": "",
+          "reason": "",
+          "provenance": []
+        },
+        {
+          "op": "add",
+          "target": "decision",
+          "id": "",
+          "statement": "Success is booking a room in under fifteen seconds",
+          "kind": "acceptance",
+          "category": "",
+          "risk": "",
+          "priority": "",
+          "dimension": "acceptance",
+          "blocking": "",
+          "basis": "",
+          "rationale": "Anything slower and people go back to Slack.",
+          "settledBySourceId": "src-1",
+          "supersedes": "",
+          "reason": "",
+          "provenance": []
+        }
+      ]
+    }
+  ],
+  "assess": [
+    {
+      "summary": "scripted",
+      "blockingItemIds": [],
+      "coverage": [
+        {
+          "dimension": "purpose",
+          "score": 0.9,
+          "rationale": "purpose: scripted"
+        },
+        {
+          "dimension": "users",
+          "score": 0.9,
+          "rationale": "users: scripted"
+        },
+        {
+          "dimension": "core-behaviour",
+          "score": 0.9,
+          "rationale": "core-behaviour: scripted"
+        },
+        {
+          "dimension": "data",
+          "score": 0.9,
+          "rationale": "data: scripted"
+        },
+        {
+          "dimension": "constraints",
+          "score": 0.9,
+          "rationale": "constraints: scripted"
+        },
+        {
+          "dimension": "edge-cases",
+          "score": 0.9,
+          "rationale": "edge-cases: scripted"
+        },
+        {
+          "dimension": "acceptance",
+          "score": 0.9,
+          "rationale": "acceptance: scripted"
+        },
+        {
+          "dimension": "integrations",
+          "score": 0.9,
+          "rationale": "integrations: scripted"
+        }
+      ]
+    }
+  ],
+  "generate-questions": [
+    {
+      "questions": [
+        {
+          "dimension": "core-behaviour",
+          "about": "req-1",
+          "text": "Where does room availability come from?",
+          "rationale": "Nothing states the source of truth, and every other behaviour depends on it.",
+          "mode": "single",
+          "recommends": 0,
+          "because": "Calendar data is already maintained; a second copy would drift.",
+          "options": [
+            {
+              "label": "Google Calendar",
+              "commits": "Every room needs a calendar resource and an integration to keep.",
+              "settles": ["req-1"]
+            },
+            {
+              "label": "Entered by hand in Roomly",
+              "commits": "Someone has to keep it current, forever."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

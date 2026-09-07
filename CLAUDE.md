@@ -24,6 +24,8 @@ Do this after completing a single unit of work in-line in the Chat.
   behind it, including two that were measured and reversed.
 - **[docs/WEAKNESSES.md](docs/WEAKNESSES.md)** — known gaps with the owner's verdict on
   each. Do not silently re-decide these.
+- **[docs/RUNNING.md](docs/RUNNING.md)** — clean clone to a generated SRS: Docker, the
+  database, the `requirely` command, and the things that will surprise you.
 
 Read `docs/PLAN.md`, then this file, then `packages/core/CLAUDE.md`.
 
@@ -75,10 +77,14 @@ pnpm dev           # next dev
 pnpm build         # next build
 pnpm start         # serve the build
 
+pnpm db:up         # Postgres up, healthy, migrated — or a reason why not
+pnpm db:reset      # same, from a destroyed volume
+pnpm db:down       # stop it
 pnpm db:generate   # regenerate migrations from schema.ts — review the SQL diff
 pnpm db:migrate    # apply migrations to DATABASE_URL
 pnpm db:studio     # drizzle studio
-docker compose up -d   # Postgres for local development (tests use PGlite instead)
+
+./bin/requirely --help   # the CLI, resolved through the repo (see docs/RUNNING.md)
 ```
 
 **Root scripts fan out with one explicit `--filter` per package, never `pnpm -r`.**
@@ -153,6 +159,33 @@ Entry points should pass an explicit module-relative path. Nothing calls it yet.
 - **Tailwind's source detection is rooted at `process.cwd()`, and a wrong `@source` path is
   a silent no-op** — no error, no warning, just unstyled components. Each package therefore
   declares only its own sources, and `pnpm verify:build` asserts the emitted CSS.
+- **`import.meta.dirname` is `undefined` inside a drizzle-kit config file.** drizzle-kit
+  transpiles `drizzle.config.ts` with esbuild to CJS, where that ESM-only property does
+  not exist — so `join(import.meta.dirname, ...)` throws. Under a plain `node` import the
+  same file resolves correctly, which is what makes it invisible: it works when you test
+  it and fails when drizzle-kit runs it. Worse, the config had a hardcoded
+  `localhost:5432` fallback and drizzle-kit swallows the driver's error inside its
+  spinner, so a *silent migration of the wrong database* presented as
+  `applying migrations...` and a bare non-zero exit. `process.cwd()` is correct here, and
+  only here, because the `db:*` scripts are declared in `packages/core` so pnpm sets cwd
+  to it. The fallback now announces itself on stderr.
+- **pnpm forwards `--` verbatim through a nested `run`.** The root `cli` script delegates
+  to a second `pnpm run`, so `pnpm cli -- --help` reached Node as `['--','--help']`.
+  `parseArgs` treats a bare `--` as end-of-options, so `--help` arrived as a *positional*
+  and `values.help` stayed false — meaning a help flag built a Postgres connection and
+  reported a database error. `pnpm exec` forwards it too, so the fix belongs in the entry
+  point (`apps/cli/src/main.ts` strips one leading `--`), not in `package.json`.
+- **postgres-js prints every Postgres NOTICE via `console.log`.** Drizzle's migrator
+  bootstraps with `CREATE SCHEMA IF NOT EXISTS` and `CREATE TABLE IF NOT EXISTS`, which
+  raise a NOTICE every time they succeed at doing nothing — so an already-migrated
+  database printed 18 lines of `already exists, skipping` before *every* CLI command's
+  real output. Silenced with `onnotice` on the migration client only.
+- **Port 5432 is frequently already owned by a native Postgres.** Measured on this repo's
+  first real machine: a NixOS `postgresql` systemd service on `127.0.0.1:5432` with no
+  `requirely` role, so the container could not bind and the committed DSN could not
+  connect — two different failures wearing one port number. `docker-compose.yml` now
+  publishes `${REQUIRELY_DB_PORT:-5432}`, and `scripts/dev-up.sh` detects the conflict
+  and names the remedy instead of relaying docker's `address already in use`.
 - **Turbopack's incremental cache can make `pnpm verify:build` pass on stale output.**
   Measured: a deliberately broken `@source` passed every check with a warm `.next` and
   failed all three CSS checks after `rm -rf`. That is why `verify:build` removes `.next`

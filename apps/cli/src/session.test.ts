@@ -199,6 +199,54 @@ const idFrom = (lines: readonly string[]): string => {
   return match[1];
 };
 
+/**
+ * The same script, as the file a *user* runs.
+ *
+ * `--provider fake` on its own is inert — `adapters/registry.ts` builds
+ * `fakeStructuredGenerator()` with an empty script — so `--script` is what makes
+ * the advertised zero-cost path real. The fixture is committed because a flag
+ * that needs a file nobody has is not a usable flag.
+ */
+const FIXTURE = join(import.meta.dirname, '../fixtures/roomly.json');
+
+describe('the committed fixture', () => {
+  it('is byte-for-byte the script these tests prove', async () => {
+    // The drift guard. Without it there are two copies of this script — the one
+    // the tests exercise and the one a user runs — and only the first is ever
+    // checked. Every comment above about *why* a fixture is shaped this way
+    // (`settledBySourceId` on the second promote, because the domain rejected the
+    // version without it) protects the file on disk only if the two stay equal.
+    const onDisk: unknown = JSON.parse(await readFile(FIXTURE, 'utf8'));
+    expect(onDisk).toEqual(SCRIPT);
+  });
+
+  it('drives a full session when passed as --script', async () => {
+    // Through `createCliRuntime` rather than a hand-swapped generator: this is
+    // the code path `requirely turn <id> --script ...` actually takes, and it is
+    // the only test that covers `scriptedGenerator`.
+    const runtime = await createCliRuntime({
+      provider: 'fake',
+      storage: 'memory',
+      script: FIXTURE,
+    });
+    const id = idFrom(await newSession(runtime, { title: 'Roomly' }));
+    await addSource(runtime, id, await brief());
+    await runOneTurn(runtime, id);
+    await answerQuestions(runtime, id, scriptedAsker(takeFirstOption));
+
+    const [srs] = await generateDocument(runtime, id, { target: 'srs' });
+    expect(srs).toContain('Availability comes from Google Calendar');
+
+    await runtime.close();
+  });
+
+  it('says which file it could not read', async () => {
+    await expect(
+      createCliRuntime({ provider: 'fake', storage: 'memory', script: '/nope/missing.json' }),
+    ).rejects.toThrow(/Could not read the script at \/nope\/missing.json/);
+  });
+});
+
 describe('a whole session, every command, no spend', () => {
   it('runs new → add → turn → answer → generate', async () => {
     const runtime = await harness();

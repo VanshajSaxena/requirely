@@ -76,16 +76,32 @@ Rules 7 and 8 name `apps/web` explicitly, so a CLI importing `postgres` is fine.
 ```bash
 pnpm --filter @requirely/cli run typecheck
 pnpm --filter @requirely/cli run test
-pnpm cli -- --help                       # from the repo root
+./bin/requirely --help                   # or `pnpm cli -- --help`
 
 # a real session, once Postgres is up
-docker compose up -d
-pnpm cli -- new --title "Roomly"
-pnpm cli -- add <id> ./brief.md
-pnpm cli -- turn <id>
-pnpm cli -- answer <id>
-pnpm cli -- generate <id> --target srs --out spec.md
+pnpm db:up
+requirely new --title "Roomly"
+requirely add <id> ./brief.md
+requirely turn <id>
+requirely answer <id>
+requirely generate <id> --target srs --out spec.md
 
-# no spend, no database — one process only
-pnpm cli -- new --provider fake --memory
+# the whole loop, no spend, across real processes
+requirely turn <id>   --script apps/cli/fixtures/roomly.json
+requirely answer <id> --auto --script apps/cli/fixtures/roomly-settle.json
 ```
+
+See [docs/RUNNING.md](../../docs/RUNNING.md) for setup and the surprises.
+
+## Two things about running it that are not obvious
+
+- **`--provider fake` on its own is inert.** `adapters/registry.ts` builds
+  `fakeStructuredGenerator()` with an *empty* script, so the first `analyze`
+  call fails. That is the right default — a fake that invented plausible
+  requirements would be the same lie this codebase refused when it chose a
+  `none` transcription provider over a `fake` one. `--script <file>` is how you
+  supply the script; `fixtures/README.md` explains why there are two files.
+- **`main.ts` strips one leading `--`.** pnpm forwards `--` verbatim through a
+  nested `run`, so `pnpm cli -- --help` arrived as `['--','--help']` and
+  `parseArgs` turned `--help` into a positional. `pnpm exec` does the same, so
+  the fix has to be in the entry point.

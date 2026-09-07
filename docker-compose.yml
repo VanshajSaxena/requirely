@@ -13,7 +13,13 @@ services:
       POSTGRES_PASSWORD: requirely
       POSTGRES_DB: requirely
     ports:
-      - "5432:5432"
+      # Host port is configurable because 5432 is frequently already taken by a
+      # native Postgres — on this repo's first real machine it was a NixOS
+      # systemd service bound to 127.0.0.1:5432, which makes the container's
+      # 0.0.0.0:5432 bind fail with EADDRINUSE. The default is unchanged, so
+      # nothing moves for anyone who has the port free; set REQUIRELY_DB_PORT in
+      # .env (which compose reads from this directory) when it is not.
+      - "${REQUIRELY_DB_PORT:-5432}:5432"
     volumes:
       - requirely-pgdata:/var/lib/postgresql/data
     healthcheck:

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { clackAsker } from './asker.ts';
+import { clackAsker, scriptedAsker, takeFirstOption } from './asker.ts';
 import { addSource } from './commands/add.ts';
 import { generateDocument } from './commands/generate.ts';
 import { listSessions, newSession, showStatus } from './commands/session.ts';
@@ -26,15 +26,21 @@ requirely — turn unstructured input into a specification you can build from
   new     [--title <t>] [--budget <n>]      start a session
   add     <session> <file> [--label <l>]    give it something to read
   turn    <session>                         analyse what it has, and ask
-  answer  <session>                         answer the outstanding questions
+  answer  <session> [--auto]                answer the outstanding questions
   status  <session>                         what it knows, and what it does not
   ls      [--limit <n>]                     recent sessions
   generate <session> --target <t> [--out <f>]
                                             srs | requirements-doc | agent-prompt
 
 Global flags
-  --provider <p>   anthropic | openai | fake   (fake costs nothing)
+  --provider <p>   anthropic | openai | fake
   --model <m>      override the reasoning model
+  --script <f>     drive the loop from a recorded script instead of a model.
+                   Costs nothing. --provider fake on its own carries no script
+                   and fails on the first call; this is how you use it:
+                     requirely turn <id> --script apps/cli/fixtures/roomly.json
+  --auto           answer by taking the first option, with no prompt. For
+                   smoke tests and CI — it makes no choices worth trusting.
   --memory         keep everything in memory (forgets it when the process exits)
   --verbose        record adapter logs
 `.trim();
@@ -46,8 +52,10 @@ const OPTIONS = {
   out: { type: 'string' },
   provider: { type: 'string' },
   model: { type: 'string' },
+  script: { type: 'string' },
   budget: { type: 'string' },
   limit: { type: 'string' },
+  auto: { type: 'boolean' },
   memory: { type: 'boolean' },
   verbose: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
@@ -83,7 +91,16 @@ async function dispatch(
     case 'turn':
       return runOneTurn(runtime, need('session id', first));
     case 'answer':
-      return answerQuestions(runtime, need('session id', first), clackAsker());
+      // `--auto` is what makes a whole session scriptable without a TTY, which
+      // is the only way `answer` gets exercised outside a person's hands. It
+      // takes the first option every time, so it is deliberately useless as an
+      // answer and honest about it in `--help`: a run driven this way proves the
+      // pipeline, never the content.
+      return answerQuestions(
+        runtime,
+        need('session id', first),
+        values['auto'] === true ? scriptedAsker(takeFirstOption) : clackAsker(),
+      );
     case 'status':
       return showStatus(runtime, need('session id', first));
     case 'generate':
@@ -96,9 +113,32 @@ async function dispatch(
   }
 }
 
+/**
+ * `process.argv.slice(2)`, minus a leading bare `--`.
+ *
+ * **This exists because `pnpm cli -- --help` never printed help.** The root
+ * script delegates to a second `pnpm run`, and pnpm forwards the `--` verbatim
+ * through the nested hop, so Node receives `['--', '--help']`. Measured against
+ * `parseArgs`: a bare `--` terminates option parsing, so `--help` arrives as a
+ * *positional* and `values.help` stays false. The command then fell through to
+ * `dispatch` — but only after `createCliRuntime` had already tried to migrate
+ * Postgres, so a help flag reported a database error.
+ *
+ * The fix belongs here rather than in `package.json` because `pnpm exec`
+ * forwards `--` too: patching the script would move the bug, not remove it.
+ *
+ * Safe because the first argument to this CLI is always a command name, so a
+ * leading `--` can never carry meaning. A `--` *after* a command is untouched
+ * and still does what a reader expects.
+ */
+function argvWithoutLeadingDoubleDash(): string[] {
+  const argv = process.argv.slice(2);
+  return argv[0] === '--' ? argv.slice(1) : argv;
+}
+
 async function main(): Promise<number> {
   const { values, positionals } = parseArgs({
-    args: process.argv.slice(2),
+    args: argvWithoutLeadingDoubleDash(),
     options: OPTIONS,
     allowPositionals: true,
     strict: true,
@@ -113,6 +153,7 @@ async function main(): Promise<number> {
   const runtime = await createCliRuntime({
     provider: values.provider,
     model: values.model,
+    script: values.script,
     // Postgres by default, because a CLI whose commands are separate processes
     // needs storage that outlives one. `--memory` is for tests and for seeing
     // the shape of a session without standing anything up; it is honest about

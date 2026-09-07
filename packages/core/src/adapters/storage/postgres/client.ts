@@ -28,7 +28,15 @@ export function createPostgresConnection(url: string): PostgresConnection {
   return {
     db,
     async migrate() {
-      const migrationClient = postgres(url, { max: 1 });
+      // `onnotice` is silenced for this client only, and only because the
+      // migrator's own bootstrap is built from `CREATE SCHEMA IF NOT EXISTS` and
+      // `CREATE TABLE IF NOT EXISTS` — which raise a NOTICE every time they do
+      // exactly what they were asked to do. postgres-js routes notices to
+      // `console.log` by default, so an already-migrated database printed 18
+      // lines of "already exists, skipping" before *every* CLI command's real
+      // output. Nothing is being hidden: these carry no information that the
+      // statement's own success does not.
+      const migrationClient = postgres(url, { max: 1, onnotice: () => {} });
       try {
         await migrate(drizzle(migrationClient, { schema }), {
           migrationsFolder: MIGRATIONS_FOLDER,

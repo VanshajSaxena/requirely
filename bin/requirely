@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# The `requirely` command, resolved through the repo rather than through an install.
+#
+# Chosen over `pnpm link --global` as the documented path because it carries no
+# install-topology risk. `packages/core` is source-only TypeScript that Node
+# executes by stripping types, and Node refuses to strip any file whose REALPATH
+# sits under node_modules (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING). This
+# wrapper resolves into the source tree, so that never becomes a question.
+#
+# `readlink -f` so the script still works when this file is itself symlinked onto
+# a PATH directory — which is the whole point of it existing.
+set -eu
+exec node "$(dirname "$(readlink -f "$0")")/../apps/cli/src/main.ts" "$@"

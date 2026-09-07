@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   DEFAULT_SUFFICIENCY_POLICY,
@@ -13,6 +14,8 @@ import {
   createPostgresConnection,
   defaultExtractor,
   type EngineDeps,
+  type FakeScript,
+  fakeStructuredGenerator,
   inMemoryStores,
   type Logger,
   loadConfig,
@@ -86,7 +89,7 @@ export interface CliRuntime {
 }
 
 export interface RuntimeOptions {
-  /** Overrides `REQUIRELY_REASONING_PROVIDER`, so `--provider fake` costs nothing. */
+  /** Overrides `REQUIRELY_REASONING_PROVIDER`. Pair `fake` with `script`. */
   readonly provider?: string | undefined;
   readonly model?: string | undefined;
   /**
@@ -99,6 +102,11 @@ export interface RuntimeOptions {
    */
   readonly storage?: 'memory' | 'postgres' | undefined;
   readonly verbose?: boolean | undefined;
+  /**
+   * Path to a recorded script. When set, the loop is driven from the file
+   * instead of from a provider — see `scriptedGenerator`.
+   */
+  readonly script?: string | undefined;
 }
 
 /**
@@ -130,10 +138,12 @@ export async function createCliRuntime(options: RuntimeOptions = {}): Promise<Cl
   // is a closed enum owned by core's config schema, so adding a provider is a
   // compile error there rather than a runtime surprise in whichever app forgot.
   const generator = withValidationRetry(
-    REASONING_ADAPTERS[config.reasoning.provider]({
-      apiKey: credential ?? 'unused-by-this-provider',
-      model: config.reasoning.model,
-    }),
+    options.script === undefined
+      ? REASONING_ADAPTERS[config.reasoning.provider]({
+          apiKey: credential ?? 'unused-by-this-provider',
+          model: config.reasoning.model,
+        })
+      : await scriptedGenerator(options.script),
     { logger },
   );
 
@@ -229,6 +239,45 @@ async function selectStorage(
   }
 
   return { stores: postgresStores(connection.db), close: () => connection.close() };
+}
+
+/**
+ * A generator driven by a file instead of by a provider.
+ *
+ * **This is what makes `--provider fake` mean anything from a terminal.** The
+ * registry entry is `fake: () => fakeStructuredGenerator()` — an *empty* script —
+ * so the flag `--help` advertised as costing nothing actually failed on the first
+ * `analyze` call. The registry is not wrong: a fake that invented plausible
+ * content on demand would be the same lie as a `fake` transcriber, which this
+ * codebase already refused in favour of a `none` provider that fails loudly. What
+ * was missing is a way to *supply* the script, and supplying it is an application
+ * concern — the file path is a CLI argument, not a fact about the enum.
+ *
+ * The script is validated against the real schemas by `fakeStructuredGenerator`
+ * itself, so a fixture that drifts from the domain fails here exactly as a real
+ * model's malformed output would.
+ */
+async function scriptedGenerator(
+  path: string,
+): Promise<ReturnType<typeof fakeStructuredGenerator>> {
+  let text: string;
+  try {
+    text = await readFile(path, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `Could not read the script at ${path}. There is one committed at apps/cli/fixtures/roomly.json.`,
+      { cause: error },
+    );
+  }
+
+  try {
+    return fakeStructuredGenerator(JSON.parse(text) as FakeScript);
+  } catch (error) {
+    throw new Error(
+      `${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 }
 
 /** Never print a connection string with its password in it. */
