@@ -12,6 +12,7 @@ import {
   type AppConfig,
   createIngestionService,
   createPostgresConnection,
+  credentialFor,
   defaultExtractor,
   type EngineDeps,
   type FakeScript,
@@ -129,10 +130,15 @@ export async function createCliRuntime(options: RuntimeOptions = {}): Promise<Cl
   const config = loadConfig(env);
   const logger = options.verbose === true ? recordingLogger() : silentLogger;
 
-  const credential =
-    config.reasoning.provider === 'openai'
-      ? config.credentials.openai
-      : config.credentials.anthropic;
+  // `credentialFor`, not a ternary. The version here was
+  //   `provider === 'openai' ? credentials.openai : credentials.anthropic`
+  // — an `else` branch over a growing enum. Adding Gemini would have shipped the
+  // *Anthropic* key to Google and failed with an auth error naming the wrong
+  // problem. Core owns the mapping because the enum is core's, and a `Record`
+  // over it makes a forgotten provider a compile error rather than a runtime
+  // surprise in whichever app forgot — exactly why `REASONING_ADAPTERS` is a
+  // `Record` too.
+  const credential = credentialFor(config);
 
   // Indexing an exhaustive table rather than a ternary per app: `ReasoningProvider`
   // is a closed enum owned by core's config schema, so adding a provider is a

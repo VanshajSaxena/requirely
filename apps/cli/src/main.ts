@@ -51,7 +51,7 @@ Dials — how Requirely should work on a session. Set once, at creation.
   A dial given alongside --dials overrides that preset's value.
 
 Global flags
-  --provider <p>   anthropic | openai | fake
+  --provider <p>   anthropic | openai | google | deepseek | fake
   --model <m>      override the reasoning model
   --script <f>     drive the loop from a recorded script instead of a model.
                    Costs nothing. --provider fake on its own carries no script

@@ -82,7 +82,13 @@ describe('the provider registries', () => {
     // Exhaustiveness is a *type* guarantee — `Record<ReasoningProvider, …>` fails
     // to compile if one is missing. This asserts the runtime side of the same
     // claim, so a cast or a widened type could not hide a gap.
-    expect(Object.keys(server.REASONING_ADAPTERS).sort()).toEqual(['anthropic', 'fake', 'openai']);
+    expect(Object.keys(server.REASONING_ADAPTERS).sort()).toEqual([
+      'anthropic',
+      'deepseek',
+      'fake',
+      'google',
+      'openai',
+    ]);
   });
 
   it('has no transcription entry for `none`, because it is a refusal', () => {

@@ -73,6 +73,7 @@ if (!RUNNABLE) announceSkip('live');
  * drift here changes a printed string rather than a request.
  */
 const ANTHROPIC_CAPS_FOR_REPORT: GrammarCaps = {
+  supportsConstrained: true,
   optional: 24,
   union: 16,
   toolModeForbidsThinking: true,

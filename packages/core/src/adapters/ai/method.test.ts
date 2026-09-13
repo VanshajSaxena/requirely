@@ -9,8 +9,18 @@ import { chooseMethod, type GrammarCaps, methodFor } from './method.ts';
  * measurement. Pure, so all of it is testable with no key and no network.
  */
 
-const ANTHROPIC: GrammarCaps = { optional: 24, union: 16, toolModeForbidsThinking: true };
-const OPENAI: GrammarCaps = { optional: 20, union: 12, toolModeForbidsThinking: false };
+const ANTHROPIC: GrammarCaps = {
+  supportsConstrained: true,
+  optional: 24,
+  union: 16,
+  toolModeForbidsThinking: true,
+};
+const OPENAI: GrammarCaps = {
+  supportsConstrained: true,
+  optional: 20,
+  union: 12,
+  toolModeForbidsThinking: false,
+};
 
 const budget = (optional: number, union: number) => ({ optional, union, bytes: 1000 });
 
@@ -79,5 +89,34 @@ describe('methodFor — measurement plus decision', () => {
     );
     expect(measureBudget(branchy).optional).toBe(40);
     expect(methodFor(branchy, ANTHROPIC).method).toBe('tool');
+  });
+});
+
+describe('a provider with no constrained decoding at all', () => {
+  /**
+   * **The hole DeepSeek found.** `GrammarCaps` carried only two numbers, and they
+   * measure *how branchy* a schema may be — which cannot express *never*. Since
+   * the Phase 8 wire redesign `analyze` measures 0 optional / 0 union, so every
+   * cap is satisfied and `constrained` would be chosen for a provider that
+   * supports JSON mode but not JSON schema. The schema being good is what would
+   * have caused the failure.
+   */
+  const NO_GRAMMAR = {
+    supportsConstrained: false,
+    optional: 20,
+    union: 12,
+    toolModeForbidsThinking: false,
+  };
+
+  it('never chooses constrained, even for a schema that fits every number', () => {
+    const choice = chooseMethod({ optional: 0, union: 0, bytes: 100 }, NO_GRAMMAR);
+    expect(choice.method).not.toBe('constrained');
+    expect(choice.reason).toContain('no schema-constrained decoding');
+  });
+
+  it('steps down to tool, since tool mode is available and permits thinking', () => {
+    expect(chooseMethod({ optional: 0, union: 0, bytes: 100 }, NO_GRAMMAR, true).method).toBe(
+      'tool',
+    );
   });
 });

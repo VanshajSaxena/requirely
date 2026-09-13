@@ -40,8 +40,14 @@
  * or promotional discounts are deliberately **not** modelled — they expire, and
  * an estimate that reads slightly high is safer than one that reads low.
  *
- * OpenAI models are absent rather than guessed. They take the `null` path, which
- * is exactly what that path is for.
+ * OpenAI, Google and DeepSeek models are absent rather than guessed. They take
+ * the `null` path, which is exactly what that path is for — and the reason is the
+ * rule two paragraphs up: a near-match that prices wrong is worse than no price,
+ * because a wrong number is believed and a missing one is questioned. Adding
+ * Gemini and DeepSeek adapters without their published prices to hand is
+ * therefore not an omission to fix later by estimating; it is the correct state
+ * until someone reads the price page. `isPriced` is how a caller says "unpriced"
+ * rather than guessing why.
  */
 
 interface ModelPrice {

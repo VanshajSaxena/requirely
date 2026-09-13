@@ -88,6 +88,20 @@ cheaper model on the command line rather than editing the committed default:
 requirely turn <id> --model claude-haiku-4-5
 ```
 
+Or change provider entirely. `--provider` takes `anthropic`, `openai`, `google`,
+`deepseek` or `fake`, each reading its own key from `.env` (`GOOGLE_API_KEY`,
+`DEEPSEEK_API_KEY`, …). Cost varies by roughly an order of magnitude:
+
+```sh
+requirely turn <id> --provider google --model gemini-flash-latest
+```
+
+Two honest caveats. **Prices for anything but Anthropic are not in the table**, so
+those sessions report "cost unknown" rather than a number — a missing figure is
+questioned and a guessed one is believed. And **DeepSeek has no schema-constrained
+decoding**, so it degrades to tool mode automatically; that path works and is less
+guarded than the constrained one.
+
 Every turn prints its own token count and cost, and `Turn` stores `usage`, so
 "what did this session cost" stays answerable from the database afterwards.
 

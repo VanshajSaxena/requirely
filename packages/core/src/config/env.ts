@@ -9,7 +9,7 @@ import { z } from 'zod';
  * provider means extending one enum.
  */
 
-const ReasoningProvider = z.enum(['anthropic', 'openai', 'fake']);
+const ReasoningProvider = z.enum(['anthropic', 'openai', 'google', 'deepseek', 'fake']);
 const TranscriptionProvider = z.enum(['openai', 'fake', 'none']);
 const TurnStrategy = z.enum(['separate', 'merged']);
 
@@ -25,6 +25,8 @@ const EnvSchema = z.object({
 
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   OPENAI_API_KEY: z.string().min(1).optional(),
+  GOOGLE_API_KEY: z.string().min(1).optional(),
+  DEEPSEEK_API_KEY: z.string().min(1).optional(),
 
   REQUIRELY_REASONING_PROVIDER: ReasoningProvider.default('anthropic'),
   REQUIRELY_REASONING_MODEL: z.string().min(1).default('claude-opus-5'),
@@ -77,6 +79,8 @@ export interface AppConfig {
   readonly credentials: {
     readonly anthropic: string | undefined;
     readonly openai: string | undefined;
+    readonly google: string | undefined;
+    readonly deepseek: string | undefined;
   };
 }
 
@@ -96,6 +100,8 @@ export class ConfigError extends Error {
 const CREDENTIAL_FOR = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
+  google: 'GOOGLE_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
   fake: null,
   // Needs no credential because it makes no calls — see the note on
   // REQUIRELY_TRANSCRIPTION_PROVIDER above.
@@ -140,6 +146,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     credentials: {
       anthropic: env.ANTHROPIC_API_KEY,
       openai: env.OPENAI_API_KEY,
+      google: env.GOOGLE_API_KEY,
+      deepseek: env.DEEPSEEK_API_KEY,
     },
   };
 }
@@ -151,4 +159,35 @@ export function loadEnvFile(path = '.env'): void {
   } catch {
     // Absent .env is normal — real environments inject variables directly.
   }
+}
+
+/**
+ * The credential the reasoning provider needs, or `undefined` when it needs none.
+ *
+ * **Exists because an app was picking it with a ternary**, in `apps/cli`:
+ *
+ * ```ts
+ * config.reasoning.provider === 'openai' ? credentials.openai : credentials.anthropic
+ * ```
+ *
+ * An `else` branch over a growing enum. Adding `google` would have shipped the
+ * *Anthropic* key to Gemini and failed with an authentication error naming the
+ * wrong problem entirely — the exact failure `REASONING_ADAPTERS` being an
+ * exhaustive `Record` exists to prevent, in the one place that never got the
+ * same treatment.
+ *
+ * A `Record` keyed by the enum is the fix: adding a provider is a compile error
+ * here rather than a runtime surprise in whichever app forgot. `fake` maps to
+ * `undefined` because it makes no calls, which is the same statement
+ * `CREDENTIAL_FOR` already makes one layer up.
+ */
+export function credentialFor(config: AppConfig): string | undefined {
+  const BY_PROVIDER: Record<ReasoningProvider, string | undefined> = {
+    anthropic: config.credentials.anthropic,
+    openai: config.credentials.openai,
+    google: config.credentials.google,
+    deepseek: config.credentials.deepseek,
+    fake: undefined,
+  };
+  return BY_PROVIDER[config.reasoning.provider];
 }

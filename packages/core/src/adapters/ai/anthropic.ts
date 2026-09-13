@@ -77,6 +77,7 @@ import { vercelStructuredGenerator } from './vercel.ts';
  * that and prefers `prompted` in exactly that case.
  */
 const ANTHROPIC_CAPS: GrammarCaps = {
+  supportsConstrained: true,
   optional: 24,
   union: 16,
   toolModeForbidsThinking: true,

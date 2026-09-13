@@ -39,6 +39,7 @@ import { vercelStructuredGenerator } from './vercel.ts';
  * degrades to `tool` early rather than 400ing late. Re-measure before trusting.
  */
 const OPENAI_CAPS: GrammarCaps = {
+  supportsConstrained: true,
   optional: 20,
   union: 12,
   toolModeForbidsThinking: false,

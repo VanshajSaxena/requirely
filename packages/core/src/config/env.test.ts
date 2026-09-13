@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig } from './env.ts';
+import { ConfigError, credentialFor, loadConfig } from './env.ts';
 
 // `fake` needs no credential, so it is the baseline for tests that are not
 // about credential resolution.
@@ -80,5 +80,51 @@ describe('loadConfig', () => {
 
   it('rejects an unknown provider rather than falling back silently', () => {
     expect(() => loadConfig({ REQUIRELY_REASONING_PROVIDER: 'mistral' })).toThrow(ConfigError);
+  });
+});
+
+describe('credentialFor', () => {
+  /**
+   * **This exists because `apps/cli` was picking the key with a ternary** —
+   * `provider === 'openai' ? openai : anthropic` — an `else` branch over a
+   * growing enum. Adding Gemini would have shipped the Anthropic key to Google
+   * and failed with an auth error naming the wrong problem.
+   */
+  const KEYS = {
+    ANTHROPIC_API_KEY: 'ant',
+    OPENAI_API_KEY: 'oai',
+    GOOGLE_API_KEY: 'goog',
+    DEEPSEEK_API_KEY: 'ds',
+  } as const;
+
+  const forProvider = (provider: string) =>
+    credentialFor(
+      loadConfig({
+        ...KEYS,
+        REQUIRELY_REASONING_PROVIDER: provider,
+        REQUIRELY_TRANSCRIPTION_PROVIDER: 'none',
+      }),
+    );
+
+  it('hands each provider its own key and never a neighbour’s', () => {
+    expect(forProvider('anthropic')).toBe('ant');
+    expect(forProvider('openai')).toBe('oai');
+    expect(forProvider('google')).toBe('goog');
+    expect(forProvider('deepseek')).toBe('ds');
+  });
+
+  it('gives the fake provider nothing, because it makes no calls', () => {
+    expect(forProvider('fake')).toBeUndefined();
+  });
+
+  it('still fails at startup when the chosen provider has no key', () => {
+    // The lookup is not a substitute for the eager check: a missing key must be
+    // a startup error, not a 401 three model calls into a paid turn.
+    expect(() =>
+      loadConfig({
+        REQUIRELY_REASONING_PROVIDER: 'google',
+        REQUIRELY_TRANSCRIPTION_PROVIDER: 'none',
+      }),
+    ).toThrow(ConfigError);
   });
 });

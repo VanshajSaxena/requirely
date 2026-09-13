@@ -38,7 +38,9 @@ export {
   type AnthropicConfig,
   anthropicStructuredGenerator,
 } from './adapters/ai/anthropic.ts';
+export { type DeepSeekConfig, deepseekStructuredGenerator } from './adapters/ai/deepseek.ts';
 export { type FakeScript, fakeStructuredGenerator } from './adapters/ai/fake.ts';
+export { type GoogleConfig, googleStructuredGenerator } from './adapters/ai/google.ts';
 export { type CallMeter, createCallMeter, withMetering } from './adapters/ai/metering.ts';
 export { type OpenAIConfig, openaiStructuredGenerator } from './adapters/ai/openai.ts';
 export { type RecordingOptions, recordingStructuredGenerator } from './adapters/ai/recording.ts';
@@ -62,6 +64,7 @@ export { openaiTranscriber } from './adapters/transcription/openai.ts';
 export {
   type AppConfig,
   ConfigError,
+  credentialFor,
   loadConfig,
   loadEnvFile,
   type ReasoningProvider,

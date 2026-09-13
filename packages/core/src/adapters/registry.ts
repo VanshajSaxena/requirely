@@ -1,7 +1,9 @@
 import type { ReasoningProvider, TranscriptionProvider } from '../config/env.ts';
 import type { StructuredGenerator, Transcriber } from '../domain/index.ts';
 import { anthropicStructuredGenerator } from './ai/anthropic.ts';
+import { deepseekStructuredGenerator } from './ai/deepseek.ts';
 import { fakeStructuredGenerator } from './ai/fake.ts';
+import { googleStructuredGenerator } from './ai/google.ts';
 import { openaiStructuredGenerator } from './ai/openai.ts';
 import { fakeTranscriber } from './transcription/fake.ts';
 import { openaiTranscriber } from './transcription/openai.ts';
@@ -47,6 +49,8 @@ export const REASONING_ADAPTERS: Record<
 > = {
   anthropic: (config) => anthropicStructuredGenerator(config),
   openai: (config) => openaiStructuredGenerator(config),
+  google: (config) => googleStructuredGenerator(config),
+  deepseek: (config) => deepseekStructuredGenerator(config),
   // Takes the same shape and ignores it, so a caller can index the table without
   // branching on which provider it happened to pick.
   fake: () => fakeStructuredGenerator(),

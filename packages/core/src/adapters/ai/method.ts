@@ -40,6 +40,21 @@ import { budgetOf, type SchemaBudget } from '../../wire/budget.ts';
 
 /** What a provider will accept in a grammar-compiled schema. */
 export interface GrammarCaps {
+  /**
+   * Whether this provider has schema-constrained decoding **at all**.
+   *
+   * Separate from the two numbers below, and it has to be: they measure *how
+   * branchy* a schema may be, which cannot express *never*. Our `analyze` schema
+   * measures 0 optional and 0 union after the Phase 8 wire redesign, so even
+   * `{ optional: 0, union: 0 }` reports "fits the caps" and picks `constrained`.
+   *
+   * Found by adding DeepSeek: it is OpenAI-compatible and supports JSON *mode*
+   * but not strict JSON *schema*, so it would have been handed a decoding mode
+   * it cannot honour, by a check that was satisfied precisely because our
+   * schemas are good. A sentinel like `optional: -1` would have worked and is a
+   * number that means "not a number"; this says what it means.
+   */
+  readonly supportsConstrained: boolean;
   readonly optional: number;
   readonly union: number;
   /**
@@ -74,6 +89,9 @@ export function chooseMethod(
   prefersThinking = false,
 ): MethodChoice {
   const over: string[] = [];
+  if (!caps.supportsConstrained) {
+    over.push('this provider has no schema-constrained decoding');
+  }
   if (budget.optional > caps.optional) {
     over.push(`${budget.optional} optional properties (limit ${caps.optional})`);
   }
