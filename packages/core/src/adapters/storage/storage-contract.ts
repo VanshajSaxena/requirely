@@ -439,6 +439,60 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         expect(await stores.sessions.listRecent(1)).toHaveLength(1);
       });
 
+      it('separates a deferred question from an unanswered one', async () => {
+        // The two look identical to a user and must not to the loop. A deferred
+        // question HAS an answer row, so `listUnansweredQuestions` correctly
+        // drops it — otherwise it would be re-asked every turn, which is nagging
+        // rather than deferring. `listDeferredQuestions` is how it comes back.
+        const sessionId = fixtures.session().id;
+        await stores.committer.commit(
+          TurnCommit.parse({
+            ...fixtures.commit({ index: 1 }),
+            questions: [],
+            answers: [
+              Answer.parse({
+                id: 'ans-1',
+                questionId: 'qst-1',
+                disposition: 'deferred',
+                answeredAt: AT,
+              }),
+            ],
+            turn: { ...fixtures.commit({ index: 1 }).turn, inputAnswerIds: ['ans-1'] },
+          }),
+        );
+
+        expect(await stores.inquiry.listUnansweredQuestions(sessionId)).toHaveLength(0);
+        const deferred = await stores.inquiry.listDeferredQuestions(sessionId);
+        expect(deferred.map((question) => question.id)).toEqual(['qst-1']);
+      });
+
+      it('does not call a delegated question deferred', async () => {
+        // Both are "I don't know", and only one comes back. Delegating hands the
+        // decision over for good; deferring keeps it.
+        const sessionId = fixtures.session().id;
+        await stores.committer.commit(
+          TurnCommit.parse({
+            ...fixtures.commit({ index: 1 }),
+            questions: [],
+            answers: [
+              Answer.parse({
+                id: 'ans-1',
+                questionId: 'qst-1',
+                disposition: 'delegated',
+                customText: 'whatever is cheapest',
+                answeredAt: AT,
+              }),
+            ],
+            turn: { ...fixtures.commit({ index: 1 }).turn, inputAnswerIds: ['ans-1'] },
+          }),
+        );
+
+        expect(await stores.inquiry.listDeferredQuestions(sessionId)).toHaveLength(0);
+        const [stored] = await stores.inquiry.listAnswers(sessionId);
+        expect(stored?.disposition).toBe('delegated');
+        expect(stored?.customText).toBe('whatever is cheapest');
+      });
+
       it('lists every question, answered or not', async () => {
         // `listUnansweredQuestions` exists to drive the *next* prompt and so
         // excludes exactly the set a projection needs: an answered question is

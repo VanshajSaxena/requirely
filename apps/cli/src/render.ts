@@ -179,9 +179,19 @@ export function renderAnswer(question: Question, answer: Answer): string {
     .map((id) => question.options.find((option) => option.id === id)?.label ?? id)
     .join('; ');
 
-  const parts = [chosen.length > 0 ? `chose: ${chosen}` : '', answer.customText ?? ''].filter(
-    (part) => part.length > 0,
-  );
+  // A disposition other than `answered` carries no selection, so without this
+  // the transcript would echo an empty line for exactly the replies a user is
+  // most likely to want to see confirmed.
+  const said =
+    answer.disposition === 'delegated'
+      ? 'asked us to decide'
+      : answer.disposition === 'deferred'
+        ? 'skipped for now'
+        : chosen.length > 0
+          ? `chose: ${chosen}`
+          : '';
+
+  const parts = [said, answer.customText ?? ''].filter((part) => part.length > 0);
   return dim(`  -> ${parts.join(' · ')}`);
 }
 

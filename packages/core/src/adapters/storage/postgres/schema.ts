@@ -181,6 +181,13 @@ export const answers = pgTable('answers', {
   questionId: text('question_id')
     .notNull()
     .references(() => questions.id, { onDelete: 'cascade' }),
+  /**
+   * `answered` | `deferred` | `delegated`.
+   *
+   * Queried — `listDeferredQuestions` filters on it — so `text` with the domain
+   * enum as the gate on read, following every other enum-shaped column here.
+   */
+  disposition: text('disposition').notNull(),
   selectedOptionIds: jsonb('selected_option_ids').$type<string[]>().notNull(),
   customText: text('custom_text'),
   additionalContext: text('additional_context'),

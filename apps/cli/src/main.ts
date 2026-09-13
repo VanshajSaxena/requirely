@@ -31,7 +31,7 @@ requirely — turn unstructured input into a specification you can build from
                                             start a session
   add     <session> <file> [--label <l>]    give it something to read
   turn    <session>                         analyse what it has, and ask
-  answer  <session> [--auto]                answer the outstanding questions
+  answer  <session> [--auto] [--deferred]   answer the outstanding questions
   status  <session>                         what it knows, and what it does not
   ls      [--limit <n>]                     recent sessions
   generate <session> --target <t> [--out <f>]
@@ -59,6 +59,7 @@ Global flags
                      requirely turn <id> --script apps/cli/fixtures/roomly.json
   --auto           answer by taking the first option, with no prompt. For
                    smoke tests and CI — it makes no choices worth trusting.
+  --deferred       revisit the questions you skipped, instead of the open ones.
   --memory         keep everything in memory (forgets it when the process exits)
   --verbose        record adapter logs
 `.trim();
@@ -80,6 +81,7 @@ const OPTIONS = {
   curiosity: { type: 'string' },
   limit: { type: 'string' },
   auto: { type: 'boolean' },
+  deferred: { type: 'boolean' },
   memory: { type: 'boolean' },
   verbose: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
@@ -127,6 +129,7 @@ async function dispatch(
         runtime,
         need('session id', first),
         values['auto'] === true ? scriptedAsker(takeFirstOption) : clackAsker(),
+        { deferred: values['deferred'] === true },
       );
     case 'status':
       return showStatus(runtime, need('session id', first));

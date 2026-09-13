@@ -15,6 +15,13 @@
       "when": 1789319709923,
       "tag": "0001_adorable_frog_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789320766271,
+      "tag": "0002_medical_invisible_woman",
+      "breakpoints": true
     }
   ]
 }

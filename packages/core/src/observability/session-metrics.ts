@@ -84,12 +84,30 @@ export interface SessionMetrics {
    */
   readonly assumptionsPerTurn: number;
   readonly assumptionsMade: number;
+  /**
+   * Questions the user handed back with "you decide".
+   *
+   * **Reported beside `assumptionsMade` because the pair is the instrument.**
+   * Nothing enforces that a delegation produces an assumption — the prompt asks
+   * for one and a model may simply not — and the failure is silent: the question
+   * is spent, the user gets nothing, and the session looks normal. Delegations
+   * climbing while assumptions stay flat is what that looks like from outside.
+   *
+   * Honest about what it is not: this cannot attribute a *specific* assumption to
+   * a *specific* delegation. Doing that needs the understanding before and after
+   * each turn, which `sessionMetrics` deliberately does not take — an instrument
+   * that needed new stored fields would make measuring expensive enough to skip.
+   * Two numbers that should move together are enough to see the failure.
+   */
+  readonly delegations: number;
+  /** Questions the user parked. A high count means the questions are landing badly. */
+  readonly deferrals: number;
   /** Repairs across all calls, or null when nothing was metering them. */
   readonly repairs: number | null;
 }
 
 export function sessionMetrics(input: MetricsInput): SessionMetrics {
-  const { turns, understanding } = input;
+  const { turns, understanding, answers } = input;
   const progress = measureProgress(understanding);
 
   const sufficientAt = turns.findIndex((turn) => turn.verdict.sufficient);
@@ -128,6 +146,8 @@ export function sessionMetrics(input: MetricsInput): SessionMetrics {
     recommendationsOffered: recommended.length,
     assumptionsPerTurn: turns.length === 0 ? 0 : assumptionsMade / turns.length,
     assumptionsMade,
+    delegations: answers.filter((answer) => answer.disposition === 'delegated').length,
+    deferrals: answers.filter((answer) => answer.disposition === 'deferred').length,
     repairs:
       input.repairsPerCall === undefined
         ? null
@@ -151,5 +171,6 @@ export function formatMetrics(label: string, metrics: SessionMetrics): string {
     `${label}: ${metrics.usage.inputTokens} in / ${metrics.usage.outputTokens} out · ${cost}`,
     `${label}: settled ${metrics.decisions}/${metrics.decisions + metrics.openItems} (${(metrics.settledRatio * 100).toFixed(0)}%), sufficient at turn ${metrics.turnsToSufficient ?? '—'}`,
     `${label}: recommendations taken ${acceptance} · assumptions/turn ${metrics.assumptionsPerTurn.toFixed(2)} · repairs ${metrics.repairs ?? 'not metered'}`,
+    `${label}: delegated ${metrics.delegations} -> ${metrics.assumptionsMade} assumption(s) · deferred ${metrics.deferrals}`,
   ].join('\n');
 }

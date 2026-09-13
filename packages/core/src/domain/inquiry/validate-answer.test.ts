@@ -119,3 +119,62 @@ describe('validateAnswer', () => {
     ).toBe('unknown-option');
   });
 });
+
+describe('not knowing the answer', () => {
+  /**
+   * **"I don't know" used to be unrepresentable.** The `empty` rule rejected any
+   * answer with no selection and no text, so the only legal replies were a
+   * choice and a written one. That is the right model for someone who already
+   * knows what they want and a bad one for almost everybody else — and it is the
+   * same hole as the product's larger one, since a user saying "you decide" is
+   * exactly the signal that should make Requirely infer instead of ask again.
+   */
+  it('lets a deferred answer be empty', () => {
+    expect(() => validateAnswer(question(), answer({ disposition: 'deferred' }))).not.toThrow();
+  });
+
+  it('lets a delegated answer be empty', () => {
+    expect(() => validateAnswer(question(), answer({ disposition: 'delegated' }))).not.toThrow();
+  });
+
+  it('still carries steering text on either', () => {
+    // Someone who cannot answer often knows why, and "ask legal first" is real
+    // information about the question even though it is not an answer to it.
+    expect(() =>
+      validateAnswer(
+        question(),
+        answer({ disposition: 'delegated', customText: 'whatever is cheapest' }),
+      ),
+    ).not.toThrow();
+  });
+
+  it('refuses a selection alongside either, because picking is answering', () => {
+    // Otherwise the record would hold a choice under a disposition asserting no
+    // choice was made, and the deliberation trail would credit the user with a
+    // decision they explicitly declined to take.
+    expect(
+      reasonOf(() =>
+        validateAnswer(
+          question(),
+          answer({ disposition: 'deferred', selectedOptionIds: ['opt-1'] }),
+        ),
+      ),
+    ).toBe('selection-without-answer');
+  });
+
+  it('still requires content when the user says they answered', () => {
+    expect(reasonOf(() => validateAnswer(question(), answer()))).toBe('empty');
+  });
+
+  it('points at the two ways out when an answer is empty', () => {
+    // The error is the only place a caller learns these exist.
+    let message = '';
+    try {
+      validateAnswer(question(), answer());
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain('deferred');
+    expect(message).toContain('delegated');
+  });
+});

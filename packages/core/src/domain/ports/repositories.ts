@@ -91,7 +91,17 @@ export interface InquiryRepository {
    * `Decision.settledBy` through here.
    */
   listQuestions(sessionId: SessionId): Promise<readonly Question[]>;
+  /**
+   * Questions with no answer row at all.
+   *
+   * A *deferred* question has one, so it is excluded here — it has been
+   * responded to, just not answered. That is deliberate: re-surfacing it every
+   * turn would be nagging rather than deferring, and the loop would ask the same
+   * thing until the budget ran out.
+   */
   listUnansweredQuestions(sessionId: SessionId): Promise<readonly Question[]>;
+  /** Questions the user explicitly parked, for `requirely answer --deferred`. */
+  listDeferredQuestions(sessionId: SessionId): Promise<readonly Question[]>;
   findAnswer(id: AnswerId): Promise<Answer | null>;
   listAnswers(sessionId: SessionId): Promise<readonly Answer[]>;
 }

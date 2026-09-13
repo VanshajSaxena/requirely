@@ -146,6 +146,16 @@ export function inMemoryStores(): MemoryStores {
         .filter((q) => q.sessionId === sessionId && !answered.has(q.id))
         .map(clone);
     },
+    async listDeferredQuestions(sessionId: SessionId) {
+      const deferred = new Set(
+        [...db.answers.values()]
+          .filter((a) => a.disposition === 'deferred')
+          .map((a) => a.questionId as string),
+      );
+      return [...db.questions.values()]
+        .filter((q) => q.sessionId === sessionId && deferred.has(q.id))
+        .map(clone);
+    },
     async findAnswer(id: AnswerId) {
       const found = db.answers.get(id);
       return found ? clone(found) : null;

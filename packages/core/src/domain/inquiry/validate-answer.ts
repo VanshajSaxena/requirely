@@ -52,10 +52,27 @@ export function validateAnswer(question: Question, answer: Answer): void {
 
   const hasSelection = answer.selectedOptionIds.length > 0;
   const hasCustomText = answer.customText !== null;
+
+  // **Only an `answered` answer has to say something.** `deferred` and
+  // `delegated` are legitimately empty — that is the whole point of them, and
+  // the old blanket rule is what made "I don't know" unrepresentable. Both may
+  // still carry `customText` as steering, so only selections are forbidden:
+  // picking an option *is* answering, and calling that a deferral would put a
+  // choice in the record under a disposition that says no choice was made.
+  if (answer.disposition !== 'answered') {
+    if (hasSelection) {
+      throw new InvalidAnswerError(
+        'selection-without-answer',
+        `Answer ${answer.id} is marked ${answer.disposition} but selects an option. Selecting one is answering.`,
+      );
+    }
+    return;
+  }
+
   if (!hasSelection && !hasCustomText) {
     throw new InvalidAnswerError(
       'empty',
-      `Answer ${answer.id} selects nothing and provides no custom text.`,
+      `Answer ${answer.id} selects nothing and provides no custom text. To skip it, mark it deferred; to have Requirely decide, mark it delegated.`,
     );
   }
 }

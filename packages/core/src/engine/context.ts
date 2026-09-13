@@ -71,8 +71,21 @@ export function renderAnswers(answered: readonly AnsweredQuestion[]): string {
           ? `  (took our suggestion: ${recommended.label})`
           : `  (we suggested ${recommended.label}; they chose otherwise)`;
 
+    // A disposition other than `answered` is the most important thing on the
+    // line, so it leads. `delegated` in particular is an instruction, not a
+    // status: the user has handed the decision over, and the prompt tells the
+    // model what to do about it. Rendering it as a quiet absence — which is what
+    // an empty answer would look like — is how that instruction gets lost.
+    const handed =
+      answer.disposition === 'delegated'
+        ? '  THE USER ASKED YOU TO DECIDE THIS ONE. Take a position and record it as an assumption.'
+        : answer.disposition === 'deferred'
+          ? '  The user parked this one. Do not treat it as settled, and do not re-ask it.'
+          : '';
+
     const parts = [
       `- Q [${question.id}] (${question.dimension}${question.about === null ? '' : `, about ${question.about}`}): ${question.text}`,
+      handed,
       chosen.length > 0 ? `  chose: ${chosen}` : '',
       followed,
       answer.customText !== null ? `  said: ${answer.customText}` : '',

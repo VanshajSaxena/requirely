@@ -143,6 +143,13 @@ export function settlementsFrom(answered: readonly AnsweredQuestion[]): Map<stri
   const settled = new Map<string, AnswerId>();
 
   for (const { question, answer } of answered) {
+    // A deferral is not a settlement. `delegated` stays in, and deliberately:
+    // the user handed the decision over, so an answer-settled promotion really
+    // is traceable to this answer — and because the answer records that it was
+    // delegated, the deliberation trail can say "you asked us to decide" rather
+    // than implying the user chose.
+    if (answer.disposition === 'deferred') continue;
+
     if (question.about !== null) settled.set(question.about, answer.id);
 
     const chosen = new Set<string>(answer.selectedOptionIds);

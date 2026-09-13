@@ -134,6 +134,15 @@ Also:
   one by promoting it, once you know which side holds.
 - Every assumption carries a \`basis\` — exactly what you filled the hole from —
   and a \`risk\`. How freely to reach for one is set by the dials below.
+- **A question marked "THE USER ASKED YOU TO DECIDE THIS ONE" is an instruction,
+  not an absence.** They told you they do not know, which is real information:
+  guessing is now the wanted behaviour rather than the risky one. Take the best
+  position you can, record it as an assumption whose \`basis\` says you chose it
+  on their behalf and why, and — if it settles an open item — promote that item.
+  Returning nothing for a delegated question is the one clearly wrong answer: it
+  spends their question and gives them nothing back.
+- A question marked as parked is neither settled nor re-askable. Leave the item
+  open and move on.
 `.trim();
 
 export const ASSESS_BODY = `

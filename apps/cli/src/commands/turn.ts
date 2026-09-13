@@ -8,7 +8,7 @@ import {
   validateAnswer,
 } from '@requirely/core/domain';
 import { runTurn } from '@requirely/core/server';
-import type { Asker } from '../asker.ts';
+import type { Asker, Reply } from '../asker.ts';
 import { CANCELLED } from '../asker.ts';
 import type { CliRuntime } from '../compose.ts';
 import {
@@ -88,12 +88,25 @@ export async function answerQuestions(
   runtime: CliRuntime,
   sessionId: string,
   asker: Asker,
+  options: { deferred?: boolean | undefined } = {},
 ): Promise<string[]> {
   const session = await requireSession(runtime, sessionId);
-  const pending = await runtime.stores.inquiry.listUnansweredQuestions(session.id);
+  // Deferred questions are **not** mixed into the normal list. A question that
+  // reappears every turn is nagging rather than deferring, and the user asked
+  // for it to go away — so coming back to one is an explicit act.
+  const pending =
+    options.deferred === true
+      ? await runtime.stores.inquiry.listDeferredQuestions(session.id)
+      : await runtime.stores.inquiry.listUnansweredQuestions(session.id);
 
   if (pending.length === 0) {
-    return [note('Nothing to answer. Run `requirely turn` to make progress.')];
+    return [
+      note(
+        options.deferred === true
+          ? 'Nothing was skipped.'
+          : 'Nothing to answer. Run `requirely turn` to make progress.',
+      ),
+    ];
   }
 
   const answers: Answer[] = [];
@@ -141,14 +154,11 @@ export async function answerQuestions(
  * test failed on a primary-key conflict. Production has an `IdGenerator`
  * precisely so this cannot happen.
  */
-function buildAnswer(
-  runtime: CliRuntime,
-  question: Question,
-  reply: { readonly selectedOptionIds: readonly string[]; readonly customText: string | null },
-): Answer {
+function buildAnswer(runtime: CliRuntime, question: Question, reply: Reply): Answer {
   return Answer.parse({
     id: AnswerId.parse(runtime.deps.ids.next('answer')),
     questionId: question.id,
+    disposition: reply.disposition ?? 'answered',
     selectedOptionIds: [...reply.selectedOptionIds],
     customText: reply.customText,
     answeredAt: runtime.deps.clock.now(),

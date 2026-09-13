@@ -1,5 +1,5 @@
 import * as clack from '@clack/prompts';
-import type { Question } from '@requirely/core/domain';
+import type { AnswerDisposition, Question } from '@requirely/core/domain';
 import { renderQuestion } from './render.ts';
 
 /**
@@ -18,6 +18,15 @@ import { renderQuestion } from './render.ts';
  */
 
 export interface Reply {
+  /**
+   * Defaults to `answered`.
+   *
+   * The other two are what a person actually does when they do not know: park it
+   * (`deferred`), or hand it over (`delegated`). Before these existed the only
+   * legal replies were a choice and a written one, so "I don't know" had to be
+   * typed as prose and then read by a model as if it were an opinion.
+   */
+  readonly disposition?: AnswerDisposition | undefined;
   /** Ids of options the user selected. Empty when they wrote their own answer. */
   readonly selectedOptionIds: readonly string[];
   readonly customText: string | null;
@@ -33,6 +42,8 @@ export const CANCELLED = null;
 
 /** Written by hand rather than taken from clack, so no vendor value crosses the port. */
 const WRITE_MY_OWN = '__custom__';
+const SKIP = '__defer__';
+const DELEGATE = '__delegate__';
 
 /**
  * The real one.
@@ -71,6 +82,12 @@ export function clackAsker(): Asker {
         // the type: it must never be possible to construct a question that
         // forbids a written answer.
         { value: WRITE_MY_OWN, label: 'Something else — let me write it' },
+        // Last, deliberately. These are the honest replies for someone who does
+        // not know, and they must be available without being the first thing the
+        // eye lands on — the same anchoring argument that keeps the
+        // recommendation out of `initialValue`.
+        { value: DELEGATE, label: "I don't know — you decide, and I'll correct you" },
+        { value: SKIP, label: 'Skip for now — ask me again later' },
       ];
 
       const picked =
@@ -87,6 +104,23 @@ export function clackAsker(): Asker {
       const selected = (Array.isArray(picked) ? picked : [picked]).filter(
         (value): value is string => typeof value === 'string',
       );
+
+      // Both escape hatches still take a note, because someone who cannot answer
+      // often knows *why* — "ask legal first", "whatever is cheapest" — and that
+      // is real steering. `validateAnswer` permits text on either; what it
+      // forbids is a selection, since picking an option is answering.
+      for (const [sentinel, disposition] of [
+        [DELEGATE, 'delegated'],
+        [SKIP, 'deferred'],
+      ] as const) {
+        if (!selected.includes(sentinel)) continue;
+        const note = await clack.text({
+          message: disposition === 'delegated' ? 'Anything to steer us by?' : 'Why, if it helps?',
+          placeholder: 'optional',
+        });
+        if (clack.isCancel(note)) return CANCELLED;
+        return { disposition, selectedOptionIds: [], customText: note.trim() || null };
+      }
 
       if (!selected.includes(WRITE_MY_OWN)) {
         return { selectedOptionIds: selected, customText: null };

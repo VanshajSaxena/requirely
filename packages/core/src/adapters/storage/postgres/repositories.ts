@@ -274,6 +274,16 @@ export function postgresInquiryRepository(db: Database): InquiryRepository {
       return rows.map((row) => toQuestion(row.question));
     },
 
+    async listDeferredQuestions(sessionId: SessionId) {
+      const rows = await db
+        .select({ question: questions })
+        .from(questions)
+        .innerJoin(answers, eq(answers.questionId, questions.id))
+        .where(and(eq(questions.sessionId, sessionId), eq(answers.disposition, 'deferred')))
+        .orderBy(questions.askedAt, questions.id);
+      return rows.map((row) => toQuestion(row.question));
+    },
+
     async findAnswer(id: AnswerId) {
       const [row] = await db.select().from(answers).where(eq(answers.id, id)).limit(1);
       return row ? toAnswer(row) : null;
@@ -354,6 +364,7 @@ export function postgresTurnCommitter(db: Database): TurnCommitter {
             command.answers.map((answer) => ({
               id: answer.id,
               questionId: answer.questionId,
+              disposition: answer.disposition,
               selectedOptionIds: [...answer.selectedOptionIds],
               customText: answer.customText,
               additionalContext: answer.additionalContext,
