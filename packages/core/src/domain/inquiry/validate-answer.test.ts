@@ -14,12 +14,12 @@ const question = (overrides: Record<string, unknown> = {}) =>
     rationale: 'Sign-up policy decides half the auth surface.',
     mode: 'single',
     options: [
-      { id: 'opt-1', label: 'Anyone', commits: 'Open sign-up, so abuse controls are needed.' },
-      { id: 'opt-2', label: 'Invited users only', commits: 'Someone has to send invites.' },
+      { id: 'opt-1', label: 'Anyone', means: 'Open sign-up, so abuse controls are needed.' },
+      { id: 'opt-2', label: 'Invited users only', means: 'Someone has to send invites.' },
       {
         id: 'opt-3',
         label: 'Admin-created accounts',
-        commits: 'Growth needs an admin in the loop.',
+        means: 'Growth needs an admin in the loop.',
       },
     ],
     askedAt: '2026-01-01T00:00:00.000Z',

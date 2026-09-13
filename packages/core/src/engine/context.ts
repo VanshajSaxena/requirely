@@ -8,6 +8,7 @@ import type {
   Understanding,
 } from '../domain/index.ts';
 import { currentDecisions, openItems } from '../domain/index.ts';
+import type { Dialled } from './prompts.ts';
 
 /**
  * Everything a model sees is assembled here and nowhere else.
@@ -176,6 +177,15 @@ export interface AnalyzeContext {
   readonly understanding: Understanding;
   readonly newSources: readonly Source[];
   readonly answered: readonly AnsweredQuestion[];
+  /**
+   * The session's dials, already resolved against the turn's ceilings.
+   *
+   * Carried on the context rather than in `EngineDeps` so that two sessions in
+   * one process can differ, and so that making dials per-request later is a
+   * change to how this field is *populated* rather than to any signature.
+   * `runTurn` is the one place that resolves it.
+   */
+  readonly dials: Dialled;
 }
 
 export function buildAnalyzeInput(context: AnalyzeContext): string {

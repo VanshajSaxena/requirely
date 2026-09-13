@@ -164,7 +164,7 @@ export const questions = pgTable('questions', {
   about: text('about'),
   text: text('text').notNull(),
   mode: text('mode').notNull(),
-  // `commits` and `settles` ride inside this JSONB, so an option's consequence
+  // `means` and `settles` ride inside this JSONB, so an option's explanation
   // is stored with the option rather than in a parallel table that could drift.
   options: jsonb('options').$type<QuestionOption[]>().notNull(),
   // Not null any more: a question with no stated reason is a form field, and the

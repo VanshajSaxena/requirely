@@ -204,8 +204,8 @@ describe('settlementsFrom', () => {
       rationale: 'scripted',
       mode: 'multiple',
       options: [
-        { id: 'opt-1', label: 'A', commits: 'a', settles: ['req-1'] },
-        { id: 'opt-2', label: 'B', commits: 'b', settles: ['req-2', 'con-1'] },
+        { id: 'opt-1', label: 'A', means: 'a', settles: ['req-1'] },
+        { id: 'opt-2', label: 'B', means: 'b', settles: ['req-2', 'con-1'] },
       ],
       askedAt: '2026-01-01T00:00:00.000Z',
       ...overrides,

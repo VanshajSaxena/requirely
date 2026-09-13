@@ -21,8 +21,8 @@ const draft = (overrides: Record<string, unknown> = {}) =>
     rationale: 'Audience decides which open requirements matter.',
     mode: 'single',
     options: [
-      { label: 'Product managers', commits: 'Plain language over precision.' },
-      { label: 'Engineers', commits: 'Technical, assumes context.' },
+      { label: 'Product managers', means: 'Plain language over precision.' },
+      { label: 'Engineers', means: 'Technical, assumes context.' },
     ],
     ...overrides,
   });
@@ -85,8 +85,8 @@ describe('the draft schema, which is what a model is held to', () => {
         rationale: 'because',
         mode: 'single',
         options: [
-          { id: 'opt-1', label: 'A', commits: 'x' },
-          { id: 'opt-2', label: 'B', commits: 'y' },
+          { id: 'opt-1', label: 'A', means: 'x' },
+          { id: 'opt-2', label: 'B', means: 'y' },
         ],
         recommends: 'opt-1',
         askedAt: '2026-01-01T00:00:00.000Z',

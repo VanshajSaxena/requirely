@@ -17,7 +17,13 @@ import {
   buildAssessInput,
   buildQuestionsInput,
 } from './context.ts';
-import { ANALYZE_INSTRUCTIONS, ASSESS_INSTRUCTIONS, QUESTIONS_INSTRUCTIONS } from './prompts.ts';
+import {
+  analyzeAndAssessInstructions,
+  analyzeInstructions,
+  assessInstructions,
+  type Dialled,
+  questionsInstructions,
+} from './prompts.ts';
 
 /**
  * The three model-facing operations, each a thin wrapper: build input, call the
@@ -88,7 +94,7 @@ const MAX_OUTPUT_TOKENS = {
   analyzeAndAssess: 14_000,
   /** Eight dimensions with rationales plus a summary is well under 1k. */
   assess: 4_000,
-  /** Four questions with options and elaborations is well under 1k. */
+  /** Four questions with explained options is well under 1k. */
   questions: 4_000,
 } as const;
 
@@ -98,7 +104,7 @@ export async function analyze(
 ): Promise<Generated<UnderstandingDelta>> {
   return deps.generator.generate({
     operation: OPERATION.analyze,
-    instructions: ANALYZE_INSTRUCTIONS,
+    instructions: analyzeInstructions(context.dials),
     input: buildAnalyzeInput(context),
     schema: UnderstandingDeltaCodec,
     // Read only by `prompted` generation, which has no structural guarantee to
@@ -114,10 +120,11 @@ export async function analyze(
 export async function assess(
   deps: StepDeps,
   understanding: Understanding,
+  dials: Dialled,
 ): Promise<Generated<UnderstandingAssessment>> {
   return deps.generator.generate({
     operation: OPERATION.assess,
-    instructions: ASSESS_INSTRUCTIONS,
+    instructions: assessInstructions(dials),
     input: buildAssessInput(understanding),
     schema: UnderstandingAssessment,
     effort: EFFORT.assess,
@@ -147,7 +154,7 @@ export async function analyzeAndAssess(
     schema: AnalyzeAndAssessResult,
     examples: [{ delta: DELTA_EXAMPLE, assessment: ASSESSMENT_EXAMPLE }],
     operation: OPERATION.analyzeAndAssess,
-    instructions: `${ANALYZE_INSTRUCTIONS}\n\n---\n\n${ASSESS_INSTRUCTIONS}\n\nAssess the understanding as it will be AFTER your delta is applied.`,
+    instructions: analyzeAndAssessInstructions(context.dials),
     input: buildAnalyzeInput(context),
     effort: EFFORT.analyze,
     maxOutputTokens: MAX_OUTPUT_TOKENS.analyzeAndAssess,
@@ -176,10 +183,11 @@ export async function generateQuestions(
   understanding: Understanding,
   verdict: SufficiencyVerdict,
   maxQuestions: number,
+  dials: Dialled,
 ): Promise<Generated<readonly QuestionDraft[]>> {
   const result = await deps.generator.generate({
     operation: OPERATION.generateQuestions,
-    instructions: QUESTIONS_INSTRUCTIONS,
+    instructions: questionsInstructions(dials),
     input: buildQuestionsInput(understanding, verdict, maxQuestions),
     schema: QuestionDrafts,
     effort: EFFORT.questions,

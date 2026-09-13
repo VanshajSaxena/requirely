@@ -45,7 +45,7 @@ export type AnalysisStrategy = (
 export const separateStrategy: AnalysisStrategy = async (deps, context, merge) => {
   const analyzed = await analyze(deps, context);
   const understanding = merge(analyzed.value);
-  const assessed = await assess(deps, understanding);
+  const assessed = await assess(deps, understanding, context.dials);
 
   return {
     understanding,

@@ -297,8 +297,8 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
           rationale: 'scripted',
           mode: 'single',
           options: [
-            { label: 'A', commits: 'a' },
-            { label: 'B', commits: 'b' },
+            { label: 'A', means: 'a' },
+            { label: 'B', means: 'b' },
           ],
         },
       ],
@@ -380,8 +380,8 @@ describe('runTurn — refusing to waste tokens or deadlock', () => {
         rationale: 'scripted',
         mode: 'single',
         options: [
-          { label: 'A', commits: 'commits to A' },
-          { label: 'B', commits: 'commits to B' },
+          { label: 'A', means: 'what A would mean' },
+          { label: 'B', means: 'what B would mean' },
         ],
       })),
     };

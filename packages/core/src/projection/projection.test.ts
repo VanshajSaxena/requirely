@@ -146,18 +146,18 @@ const QUESTION = Question.parse({
     {
       id: 'opt-1',
       label: 'SSO via Okta',
-      commits: 'Every user needs an Okta account.',
+      means: 'Every user needs an Okta account.',
       settles: ['req-9'],
     },
     {
       id: 'opt-2',
       label: 'Magic links',
-      commits: 'No password to store, but every sign-in needs a working inbox.',
+      means: 'No password to store, but every sign-in needs a working inbox.',
     },
     {
       id: 'opt-3',
       label: 'Password plus TOTP',
-      commits: 'Full control, and a support burden for resets.',
+      means: 'Full control, and a support burden for resets.',
     },
   ],
   askedAt: AT,

@@ -73,8 +73,8 @@ const question = (id: string, overrides: Record<string, unknown> = {}) =>
     rationale: 'scripted',
     mode: 'single',
     options: [
-      { id: `${id}-opt-1`, label: 'A', commits: 'a' },
-      { id: `${id}-opt-2`, label: 'B', commits: 'b' },
+      { id: `${id}-opt-1`, label: 'A', means: 'a' },
+      { id: `${id}-opt-2`, label: 'B', means: 'b' },
     ],
     askedAt: AT,
     ...overrides,

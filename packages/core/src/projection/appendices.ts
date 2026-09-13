@@ -192,10 +192,10 @@ function consideredLines(deliberation: Deliberation | undefined): string[] {
   if (deliberation === undefined) return [];
 
   return [
-    ...deliberation.chosen.map((option) => `chose: ${option.label} — ${option.commits}`),
+    ...deliberation.chosen.map((option) => `chose: ${option.label} — ${option.means}`),
     deliberation.custom === null ? '' : `answered in their own words: ${deliberation.custom}`,
     ...deliberation.rejected.map(
-      (option) => `considered and rejected: ${option.label} — ${option.commits}`,
+      (option) => `considered and rejected: ${option.label} — ${option.means}`,
     ),
     deliberation.overrode === null
       ? ''

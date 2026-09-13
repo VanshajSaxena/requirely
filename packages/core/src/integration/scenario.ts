@@ -101,11 +101,11 @@ export const TURN_1_QUESTIONS = {
       options: [
         {
           label: 'A spec an engineer can build from unaided',
-          commits: 'The bar is the document, so gathering continues until it stands alone.',
+          means: 'The bar is the document, so gathering continues until it stands alone.',
         },
         {
           label: 'Fewer clarification rounds before work starts',
-          commits: 'Success depends on the team around the spec, not the spec itself.',
+          means: 'Success depends on the team around the spec, not the spec itself.',
         },
       ],
     },
@@ -116,9 +116,9 @@ export const TURN_1_QUESTIONS = {
       rationale: 'Who this serves decides which of the open requirements matter.',
       mode: 'multiple',
       options: [
-        { label: 'Product managers', commits: 'Wording favours plain language over precision.' },
-        { label: 'Engineers', commits: 'Output leans technical and assumes context.' },
-        { label: 'Founders', commits: 'Speed matters more than completeness.' },
+        { label: 'Product managers', means: 'Wording favours plain language over precision.' },
+        { label: 'Engineers', means: 'Output leans technical and assumes context.' },
+        { label: 'Founders', means: 'Speed matters more than completeness.' },
       ],
     },
   ],

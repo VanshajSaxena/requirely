@@ -241,6 +241,7 @@ export async function runTurn(
   const temperament = session.temperament;
   const policy = policyFor(temperament, deps.policy);
   const counts = countsFor(temperament, { maxQuestionsPerTurn: deps.maxQuestionsPerTurn });
+  const dials = { temperament, counts };
 
   const settledBy = settlementsFrom(answered);
 
@@ -262,7 +263,7 @@ export async function runTurn(
 
   const analysis = await deps.strategy(
     deps,
-    { session, understanding: current, newSources, answered },
+    { session, understanding: current, newSources, answered, dials },
     merge,
   );
 
@@ -328,7 +329,7 @@ export async function runTurn(
     // inside `countsFor`; the session's remaining budget clamps it again here.
     // Two ceilings, neither of which a dial can raise.
     const cap = Math.min(counts.questionsPerTurn, budgetRemaining);
-    const drafted = await generateQuestions(deps, understanding, verdict, cap);
+    const drafted = await generateQuestions(deps, understanding, verdict, cap, dials);
     usage.push(drafted.usage);
 
     const selected = selectQuestions(drafted.value, understanding, verdict, cap);

@@ -54,7 +54,7 @@ export const renderAgentPrompt: Projection = (input) => {
   // agent needs the shape of the door that is closed, not the deliberation.
   const trail = deliberations(input);
   const rejected = decisions.flatMap((decision) =>
-    (trail.get(decision.id)?.rejected ?? []).map((option) => `${option.label} — ${option.commits}`),
+    (trail.get(decision.id)?.rejected ?? []).map((option) => `${option.label} — ${option.means}`),
   );
 
   return `${blocks([

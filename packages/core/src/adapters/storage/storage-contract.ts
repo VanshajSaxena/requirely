@@ -180,14 +180,13 @@ export const fixtures = {
             {
               id: `opt-${index * 2 + 1}`,
               label: 'A buildable spec',
-              commits: 'The document has to stand alone.',
+              means: 'The document has to stand alone.',
               settles: ['req-1'],
             },
             {
               id: `opt-${index * 2 + 2}`,
               label: 'Fewer clarifications',
-              elaboration: 'Measured.',
-              commits: 'Success depends on the team, not the spec.',
+              means: 'Success depends on the team, not the spec.',
             },
           ],
           askedAt: AT,
@@ -468,7 +467,7 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         // is rendered from, and they are the ones a UI may withhold.
         expect(all[0]?.recommends).toBe('opt-1');
         expect(all[0]?.because).toBe('It measures the output rather than the process.');
-        expect(all[0]?.options[0]?.commits).toBe('The document has to stand alone.');
+        expect(all[0]?.options[0]?.means).toBe('The document has to stand alone.');
         expect(all[0]?.options[0]?.settles).toEqual(['req-1']);
       });
 

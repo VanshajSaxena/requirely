@@ -286,9 +286,16 @@ Load-bearing conventions, each with a test pinning it:
   | Session, turn, revision, question, answer | `ses-01a033cb-…` (UUIDv7) | `IdGenerator` port | Never model-emitted. Keeps global uniqueness and index locality, which is what UUIDv7 is good for. |
 
   A 40-character UUID shared a 28-character prefix with its neighbours — UUIDv7's timestamp bits guarantee that for a batch minted in one call. Every model reference was a transcription task with an all-or-nothing failure (`applyDelta` throws), on a path costing 2–3 calls at `effort: 'high'`.
-- **`Question.rationale` and `QuestionOption.commits` are required.** A question
-  with no stated reason is a form field; an option list without consequences is a
+- **`Question.rationale` and `QuestionOption.means` are required.** A question
+  with no stated reason is a form field; an option list without explanations is a
   menu. Both were the first fields a model would drop while they were optional.
+  `means` was called `commits` and the rename is the change: "commits you to"
+  read as an obligation being incurred, which is wrong for a user who does not
+  yet know what they want — nothing here is binding, and `Decision.supersededBy`
+  is what makes that true. A sibling `elaboration` field was deleted outright: it
+  was nullable, set by two fixtures, rendered by nothing and **named in no
+  prompt**, so no model ever filled it. A field no prompt mentions does not
+  exist, and this one cost a union slot against the grammar caps to not exist.
 - **`recommends` is an `OptionId` on the entity and an *index* on the draft.**
   Option ids are minted by `materializeQuestions`, so a model cannot name one.
   `because` is required exactly when `recommends` is, and `recommends` must name
@@ -303,6 +310,46 @@ Load-bearing conventions, each with a test pinning it:
 - **`.prefault()`, not `.default()`, for nested objects.** Zod's `.default()` returns its argument _without parsing it_, so `.default({})` yields a bare `{}` and skips every inner default. `.prefault({})` parses first.
 - **Revisions strip defaults.** `patchOf()` in `understanding/delta.ts` — `.partial()` alone leaves `.default()` intact, so a revision naming one field would silently overwrite the others with their defaults.
 - **Unmentioned means unchanged; `null` means cleared.** `stripUndefined` in `apply-delta.ts` enforces this.
+
+## Temperament orientation
+
+Five numeric dials on the `Session` — `creativity`, `assertiveness`,
+`technicality`, `thoroughness`, `curiosity` — that decide how Requirely works on
+one session. `domain/temperament/` holds the value object and two pure
+derivations; nothing else in the domain knows they exist.
+
+- **Numbers, not modes.** The two personas that motivated this differ on
+  `technicality` and agree on everything else, which is an argument an enum
+  cannot make. Presets (`explorer`, `translator`, `scribe`, `balanced`) are
+  starting points, and an individual dial overrides one.
+- **`DIAL_NAMES` derives from `Temperament.shape`.** A hand-written union would
+  compile while silently omitting a dial from every briefing that iterates it —
+  the dial would exist, be settable, be stored, and do nothing.
+- **Three wirings, and one deliberately absent.** Graded prose (banded in thirds,
+  because prose cannot be interpolated), scaled counts (continuous), and the raw
+  number stated in the prompt. **Not** the provider's sampling temperature: it
+  would move with the other three, so no experiment could attribute an effect to
+  any of them.
+- **A dial may never raise a ceiling.** `countsFor` clamps `questionsPerTurn`
+  against `config.maxQuestionsPerTurn` rather than replacing it, and `policyFor`
+  derives from a base so `requiredDimensions` survives — a slider must not be
+  able to redefine what "understood" means.
+- **`runTurn` reads the dials off the session, not off `EngineDeps`.** That is
+  what makes per-request dials additive later: one line becomes
+  `request.temperament ?? session.temperament`. `Turn` records what it ran under,
+  so changing dials mid-session cannot rewrite history.
+- **The briefing is appended to the prompt, never prepended**, so the stable body
+  stays a shared cache prefix. `engine/prompts.test.ts` pins that, and pins the
+  placebo property: every dial must produce different instructions when moved
+  alone. That test is not paranoia — this prompt file carried "You are not a
+  question-asking machine" twice, top and bottom, and the questions stayed
+  interrogatory. **Prompt pleading loses to structural incentive.**
+- **The old conservatism survives as the bottom band**, not as a deletion.
+  `scribe` still gets "an assumption is a last resort"; it just is not everyone's
+  only option any more. What made removing it safe is that the two-tier model
+  already prevents fabrication — an open item gets a question, an assumption
+  carries a checkable `basis` — so the blanket rule was belt-and-braces over a
+  structural guarantee.
 
 ## Commands
 

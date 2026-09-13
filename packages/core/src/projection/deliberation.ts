@@ -19,7 +19,7 @@ import type { ProjectionInput } from './types.ts';
  *
  * **Nothing is duplicated onto the Decision to get it.** `settledBy` names an
  * `Answer`, which names its `Question`, which holds every `Option` and what each
- * one `commits` you to. Copying the alternatives onto the Decision would
+ * one `means`. Copying the alternatives onto the Decision would
  * denormalise what a durable reference already reaches — and would then need
  * keeping in sync with the question it came from.
  *

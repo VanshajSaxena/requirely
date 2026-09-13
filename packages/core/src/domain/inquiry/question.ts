@@ -10,22 +10,39 @@ export type AnswerMode = z.infer<typeof AnswerMode>;
 export const QuestionOption = z.object({
   id: OptionId,
   label: z.string().min(1),
-  /** Expands the trade-off behind an option, for choices that aren't self-evident. */
-  elaboration: z.string().min(1).nullable().default(null),
   /**
-   * What choosing this commits you to.
+   * What this option actually means, in one plain sentence.
    *
-   * Required, and that is the point. An option list without consequences is a
-   * menu; with them it is a decision aid. "Magic links" and "magic links — no
-   * password store, but every login needs a working inbox" are the same choice
-   * presented to two different people.
+   * Required, and that is the point. An option list without explanations is a
+   * menu; with them it is a decision aid. "Magic links" and "magic links — a
+   * sign-in link is emailed each time, so there is no password to store, but
+   * every sign-in needs a working inbox" are the same choice offered to two very
+   * different people.
+   *
+   * **Renamed from `commits`, and the rename is the change.** The old name — and
+   * the CLI label "commits you to:" that sat above it — read as an obligation
+   * being incurred, which is exactly wrong for a user who does not yet know what
+   * they want. Nothing here is binding: a Decision can be superseded, and that is
+   * what `Decision.supersededBy` is for. The field's job is to let someone
+   * *recognise* the right answer rather than having to recall it, which is the
+   * whole reason options exist.
+   *
+   * So it should say what the option is, when it fits, and what it costs —
+   * whichever of those a reader needs. One field rather than three: three
+   * required strings across four options is twelve per question, and each one
+   * gets thinner as the model divides its attention.
    *
    * This is also what QOC's *Criteria* would have provided. Criteria are the part
    * of QOC that most obviously adds capture burden, and burden is the documented
    * reason IBIS and QOC were not adopted — so options are compared by what each
-   * one costs you rather than against a shared reusable axis.
+   * one means rather than against a shared reusable axis.
+   *
+   * A sibling `elaboration` field lived here and was deleted: it was nullable, set
+   * by two test fixtures, rendered by nothing, and named in no prompt — so no
+   * model ever filled it. It cost a union slot against the grammar caps for
+   * nothing. A field no prompt mentions is a field that does not exist.
    */
-  commits: z.string().min(1),
+  means: z.string().min(1),
   /**
    * Open items this option would settle, if chosen.
    *

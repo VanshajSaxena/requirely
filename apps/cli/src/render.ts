@@ -160,7 +160,7 @@ export function renderQuestion(question: Question, index: number, total: number)
 
   for (const option of question.options) {
     lines.push(`  · ${option.label}`);
-    lines.push(dim(`      commits you to: ${option.commits}`));
+    lines.push(dim(`      ${option.means}`));
   }
 
   const recommended = question.options.find((option) => option.id === question.recommends);

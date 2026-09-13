@@ -195,12 +195,11 @@ const cases: readonly [string, ZodType<unknown>, unknown][] = [
       recommends: 'opt-2',
       because: 'Invite-only is reversible; open sign-up is not.',
       options: [
-        { id: 'opt-1', label: 'Anyone', commits: 'Open sign-up, so abuse controls are needed.' },
+        { id: 'opt-1', label: 'Anyone', means: 'Open sign-up, so abuse controls are needed.' },
         {
           id: 'opt-2',
           label: 'Invited only',
-          elaboration: 'Requires an invite flow.',
-          commits: 'Someone has to send invites.',
+          means: 'Someone has to send invites.',
           settles: ['req-1'],
         },
       ],
