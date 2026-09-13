@@ -6,6 +6,7 @@ import { generateDocument } from './commands/generate.ts';
 import { listSessions, newSession, showStatus } from './commands/session.ts';
 import { answerQuestions, runOneTurn } from './commands/turn.ts';
 import { type CliRuntime, createCliRuntime } from './compose.ts';
+import { temperamentFrom } from './dials.ts';
 
 /**
  * The entry point.
@@ -20,10 +21,14 @@ import { type CliRuntime, createCliRuntime } from './compose.ts';
  * a process.
  */
 
+// No backticks inside this template literal. It has broken the build twice now,
+// and the failure is ERR_INVALID_TYPESCRIPT_SYNTAX from Node's type stripper
+// pointing at a line of prose, which reads like anything but a quoting problem.
 const USAGE = `
 requirely — turn unstructured input into a specification you can build from
 
-  new     [--title <t>] [--budget <n>]      start a session
+  new     [--title <t>] [--budget <n>] [--dials <p>]
+                                            start a session
   add     <session> <file> [--label <l>]    give it something to read
   turn    <session>                         analyse what it has, and ask
   answer  <session> [--auto]                answer the outstanding questions
@@ -31,6 +36,19 @@ requirely — turn unstructured input into a specification you can build from
   ls      [--limit <n>]                     recent sessions
   generate <session> --target <t> [--out <f>]
                                             srs | requirements-doc | agent-prompt
+
+Dials — how Requirely should work on a session. Set once, at creation.
+  --dials <p>      balanced | explorer | translator | scribe
+                     balanced    neutral on everything
+                     explorer    ideas, no time: expand what you said
+                     translator  deep domain, no code: make it buildable
+                     scribe      you have a spec: organise it faithfully
+  --creativity <n>      0..1  how far past your words it reaches
+  --assertiveness <n>   0..1  how much it decides without asking
+  --technicality <n>    0..1  vocabulary, 0 = no jargon at all
+  --thoroughness <n>    0..1  how high the bar for "enough" is
+  --curiosity <n>       0..1  how many questions, how many options
+  A dial given alongside --dials overrides that preset's value.
 
 Global flags
   --provider <p>   anthropic | openai | fake
@@ -54,6 +72,12 @@ const OPTIONS = {
   model: { type: 'string' },
   script: { type: 'string' },
   budget: { type: 'string' },
+  dials: { type: 'string' },
+  creativity: { type: 'string' },
+  assertiveness: { type: 'string' },
+  technicality: { type: 'string' },
+  thoroughness: { type: 'string' },
+  curiosity: { type: 'string' },
   limit: { type: 'string' },
   auto: { type: 'boolean' },
   memory: { type: 'boolean' },
@@ -77,11 +101,14 @@ async function dispatch(
   };
 
   switch (command) {
-    case 'new':
+    case 'new': {
+      const temperament = temperamentFrom(values);
       return newSession(runtime, {
         title: values['title'] as string | undefined,
         budget: number(values['budget'] as string | undefined),
+        ...(temperament === undefined ? {} : { temperament }),
       });
+    }
     case 'ls':
       return listSessions(runtime, { limit: number(values['limit'] as string | undefined) });
     case 'add':

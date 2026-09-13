@@ -5,6 +5,7 @@ import {
   assertTransition,
   CapabilityError,
   type Clock,
+  countsFor,
   decideSufficiency,
   emptyUnderstanding,
   type IdGenerator,
@@ -14,6 +15,7 @@ import {
   measureProgress,
   type OpenItemId,
   openItems,
+  policyFor,
   type Question,
   type QuestionDraft,
   RevisionId,
@@ -223,6 +225,23 @@ export async function runTurn(
 
   const turnId = TurnId.parse(deps.ids.next('turn'));
 
+  /**
+   * The dials, resolved once for the whole turn.
+   *
+   * Read from the **session** rather than from `deps`, which is what makes
+   * per-request dials additive later: this line becomes
+   * `request.temperament ?? session.temperament` and nothing else moves. Putting
+   * them in `EngineDeps` would have made them a property of the wiring, and two
+   * sessions in one process could not then differ.
+   *
+   * `deps.policy` and `deps.maxQuestionsPerTurn` keep their jobs and change
+   * meaning slightly: they are now the **base** and the **ceiling** that the
+   * dials work within, never values a dial replaces.
+   */
+  const temperament = session.temperament;
+  const policy = policyFor(temperament, deps.policy);
+  const counts = countsFor(temperament, { maxQuestionsPerTurn: deps.maxQuestionsPerTurn });
+
   const settledBy = settlementsFrom(answered);
 
   // Every source the session has, so a model-cited `settledBySourceId` is checked
@@ -262,7 +281,7 @@ export async function runTurn(
       ...analysis.assessment,
       blockingItemIds: resolveBlockingItems(understanding, analysis.assessment),
     },
-    deps.policy,
+    policy,
     {
       questionsAsked: session.questionsAsked,
       questionBudget: session.questionBudget,
@@ -305,7 +324,10 @@ export async function runTurn(
     // spending the rest will not help.
     status = 'stalled';
   } else {
-    const cap = Math.min(deps.maxQuestionsPerTurn, budgetRemaining);
+    // `counts.questionsPerTurn` is already clamped by `deps.maxQuestionsPerTurn`
+    // inside `countsFor`; the session's remaining budget clamps it again here.
+    // Two ceilings, neither of which a dial can raise.
+    const cap = Math.min(counts.questionsPerTurn, budgetRemaining);
     const drafted = await generateQuestions(deps, understanding, verdict, cap);
     usage.push(drafted.usage);
 
@@ -338,6 +360,7 @@ export async function runTurn(
     understandingBefore: previous?.id ?? null,
     understandingAfter: revision.id,
     verdict,
+    temperament,
     usage,
     startedAt,
     completedAt,

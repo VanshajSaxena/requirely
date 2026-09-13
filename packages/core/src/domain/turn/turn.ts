@@ -3,6 +3,7 @@ import { AnswerId, RevisionId, SessionId, SourceId, TurnId } from '../shared/ids
 import { Timestamp } from '../shared/time.ts';
 import { Usage } from '../shared/usage.ts';
 import { SufficiencyVerdict } from '../sufficiency/verdict.ts';
+import { Temperament } from '../temperament/temperament.ts';
 
 /** What set this iteration of the loop in motion. */
 export const TurnTrigger = z.enum(['initial', 'sources-added', 'answers-received']);
@@ -26,6 +27,17 @@ export const Turn = z.object({
   understandingBefore: RevisionId.nullable().default(null),
   understandingAfter: RevisionId,
   verdict: SufficiencyVerdict,
+  /**
+   * The dials this turn actually ran under.
+   *
+   * Recorded rather than looked up, for two reasons. It makes the audit trail
+   * honest — "this was decided at creativity 0.9" is a fact about the turn, and a
+   * session whose dials were changed halfway would otherwise rewrite its own
+   * history. And it is the base the owner asked for: making dials per-request
+   * later is then a *variation* of a value that is already carried per turn,
+   * rather than a schema change.
+   */
+  temperament: Temperament.prefault({}),
   /** One entry per capability call, so cost is attributable within a turn. */
   usage: z.array(Usage).default([]),
   startedAt: Timestamp,

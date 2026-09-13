@@ -4,6 +4,7 @@ import type { IdGenerator } from '../ports/id-generator.ts';
 import { SessionStateError } from '../shared/errors.ts';
 import { RevisionId, SessionId } from '../shared/ids.ts';
 import { Timestamp } from '../shared/time.ts';
+import { Temperament } from '../temperament/temperament.ts';
 
 /**
  * The output target is nullable by design. A user may declare it up front
@@ -45,6 +46,17 @@ export const Session = z.object({
   outputTarget: OutputTarget.nullable().default(null),
   questionBudget: z.number().int().positive(),
   questionsAsked: z.number().int().nonnegative().default(0),
+  /**
+   * How Requirely should work on this session.
+   *
+   * On the Session rather than in config because it is a property of *this piece
+   * of work*, not of the installation: the same person running two sessions wants
+   * different dials for a half-formed idea and for a spec they already wrote.
+   *
+   * `prefault` rather than `default`: every dial has its own default, and
+   * `.default({})` would short-circuit parsing and hand back a literal `{}`.
+   */
+  temperament: Temperament.prefault({}),
   currentRevisionId: RevisionId.nullable().default(null),
   createdAt: Timestamp,
   updatedAt: Timestamp,
@@ -90,6 +102,8 @@ export interface CreateSessionInput {
   readonly questionBudget: number;
   readonly title?: string | undefined;
   readonly outputTarget?: OutputTarget | undefined;
+  /** Omitted means neutral on every dial — see `BALANCED_TEMPERAMENT`. */
+  readonly temperament?: Temperament | undefined;
 }
 
 /**
@@ -111,6 +125,7 @@ export function createSession(
     outputTarget: input.outputTarget ?? null,
     questionBudget: input.questionBudget,
     questionsAsked: 0,
+    temperament: input.temperament ?? {},
     currentRevisionId: null,
     createdAt: now,
     updatedAt: now,

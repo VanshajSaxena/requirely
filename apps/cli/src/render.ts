@@ -2,12 +2,14 @@ import {
   type Answer,
   currentDecisions,
   type Decision,
+  DIAL_NAMES,
   type OpenItem,
   openItems,
   type Question,
   type Session,
   type Source,
   type SufficiencyVerdict,
+  type Temperament,
   type Understanding,
   type UsageTotals,
 } from '@requirely/core/domain';
@@ -182,6 +184,18 @@ export function renderAnswer(question: Question, answer: Answer): string {
   );
   return dim(`  -> ${parts.join(' · ')}`);
 }
+
+/**
+ * The five dials on one line.
+ *
+ * Printed at `new` and at `status` rather than hidden in a config file, because
+ * they are set once and then shape every turn invisibly. A mistyped
+ * `--creativity 0.9` that was meant to be `0.09` is only catchable if the value
+ * is shown back; otherwise it surfaces three turns later as a document that
+ * reads oddly and nobody knows why.
+ */
+export const dialsLine = (temperament: Temperament): string =>
+  `dials  ${DIAL_NAMES.map((dial) => `${dial} ${temperament[dial].toFixed(2)}`).join(' · ')}`;
 
 export const heading = (text: string): string => `\n${bold(text)}`;
 export const note = (text: string): string => dim(text);

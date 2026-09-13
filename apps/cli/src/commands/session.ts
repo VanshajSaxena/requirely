@@ -1,8 +1,15 @@
-import { createSession, emptyUnderstanding, type Session, SessionId } from '@requirely/core/domain';
+import {
+  createSession,
+  emptyUnderstanding,
+  type Session,
+  SessionId,
+  type Temperament,
+} from '@requirely/core/domain';
 import { sessionMetrics } from '@requirely/core/server';
 import type { CliRuntime } from '../compose.ts';
 import {
   describeStatus,
+  dialsLine,
   heading,
   note,
   renderSources,
@@ -23,12 +30,17 @@ import {
 
 export async function newSession(
   runtime: CliRuntime,
-  options: { title?: string | undefined; budget?: number | undefined },
+  options: {
+    title?: string | undefined;
+    budget?: number | undefined;
+    temperament?: Temperament | undefined;
+  },
 ): Promise<string[]> {
   const session = createSession(
     {
       questionBudget: options.budget ?? runtime.config.questionBudget,
       ...(options.title === undefined ? {} : { title: options.title }),
+      ...(options.temperament === undefined ? {} : { temperament: options.temperament }),
     },
     runtime.deps,
   );
@@ -37,6 +49,10 @@ export async function newSession(
   return [
     `Created ${session.id}`,
     note(`  budget: ${session.questionBudget} questions`),
+    // Echoed at creation because the dials are set once and then shape every
+    // turn silently. A user who mistyped `--creativity 9` should find out here,
+    // not from a document that reads oddly three turns later.
+    note(`  ${dialsLine(session.temperament)}`),
     note('  next: requirely add <id> <file>'),
   ];
 }
@@ -78,6 +94,7 @@ export async function showStatus(runtime: CliRuntime, id: string): Promise<strin
   const lines = [
     `${session.title ?? '(untitled)'}  ${note(session.id)}`,
     describeStatus(session.status),
+    note(`  ${dialsLine(session.temperament)}`),
     '',
     note(
       `revision ${revision?.revision ?? '—'} · ${metrics.turns} turn(s) · ${metrics.calls} model call(s)`,

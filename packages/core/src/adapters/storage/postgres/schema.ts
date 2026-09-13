@@ -11,6 +11,7 @@ import type {
   QuestionOption,
   SourceOrigin,
   SufficiencyVerdict,
+  Temperament,
   TranscriptSegment,
   Understanding,
   Usage,
@@ -65,6 +66,14 @@ export const sessions = pgTable('sessions', {
   outputTarget: text('output_target'),
   questionBudget: integer('question_budget').notNull(),
   questionsAsked: integer('questions_asked').notNull(),
+  /**
+   * The five dials, as one JSONB object rather than five numeric columns.
+   *
+   * They are read and written together, never queried individually, and adding a
+   * sixth dial should not be a migration. The domain schema is the gate on read,
+   * exactly as it is for `understanding_revisions.content`.
+   */
+  temperament: jsonb('temperament').$type<Temperament>().notNull(),
   currentRevisionId: text('current_revision_id'),
   /**
    * Bumped on every write but not yet enforced. Present from the first migration
@@ -135,6 +144,8 @@ export const turns = pgTable(
     understandingBefore: text('understanding_before'),
     understandingAfter: text('understanding_after').notNull(),
     verdict: jsonb('verdict').$type<SufficiencyVerdict>().notNull(),
+    /** What this turn actually ran under — see the note on `Turn.temperament`. */
+    temperament: jsonb('temperament').$type<Temperament>().notNull(),
     usage: jsonb('usage').$type<Usage[]>().notNull(),
     startedAt: timestamp('started_at', MILLISECOND_UTC).notNull(),
     completedAt: timestamp('completed_at', MILLISECOND_UTC).notNull(),

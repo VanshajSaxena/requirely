@@ -243,6 +243,25 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         expect(await stores.sessions.findById(session.id)).toEqual(session);
       });
 
+      it('round-trips a temperament that is not the default one', async () => {
+        // **Every dial is deliberately off 0.5.** A round-trip on the default
+        // vector would pass with the column dropped entirely, because the domain
+        // schema fills the same numbers back in on read — the vacuous pass this
+        // repo has already been bitten by once, when a renamed field left a test
+        // parsing the old key into nothing.
+        const temperament = {
+          creativity: 0.9,
+          assertiveness: 0.2,
+          technicality: 0.15,
+          thoroughness: 0.75,
+          curiosity: 1,
+        };
+        const session = fixtures.session({ temperament });
+        await stores.sessions.create(session);
+
+        expect((await stores.sessions.findById(session.id))?.temperament).toEqual(temperament);
+      });
+
       it('preserves an explicitly null output target', async () => {
         const session = fixtures.session({ outputTarget: null, title: null });
         await stores.sessions.create(session);
@@ -318,6 +337,28 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
 
         const question = commit.questions[0];
         expect(await stores.inquiry.findQuestion(questionId('qst-1'))).toEqual(question);
+      });
+
+      it('records the temperament the turn ran under', async () => {
+        // The audit claim in `Turn.temperament`: a session whose dials were
+        // changed later must not rewrite what earlier turns actually ran under.
+        const temperament = {
+          creativity: 0.9,
+          assertiveness: 0.2,
+          technicality: 0.15,
+          thoroughness: 0.75,
+          curiosity: 1,
+        };
+        const base = fixtures.commit();
+        const commit = {
+          ...base,
+          session: { ...base.session, temperament },
+          turn: { ...base.turn, temperament },
+        };
+        await stores.committer.commit(commit);
+
+        const [turn] = await stores.sessions.listTurns(commit.session.id);
+        expect(turn?.temperament).toEqual(temperament);
       });
 
       it('round-trips the understanding content through JSONB unchanged', async () => {
