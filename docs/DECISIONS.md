@@ -592,6 +592,73 @@ codebase is organised along.
 
 ---
 
+## The temperament: five dials, and the one measurement that justified them (Phase 10)
+
+Requirely read as interrogatory, and the cause was written down rather than
+implied. `ANALYZE_INSTRUCTIONS` said *"an assumption is a LAST RESORT"* and *"be
+conservative"* — the right personality for someone arriving with a spec, and the
+wrong one for someone arriving with an idea, which is most people.
+
+**Numbers per characteristic, not an enum of modes.** The two personas that
+prompted this differ on exactly one dial:
+
+```
+explorer    { creativity .9, assertiveness .7, technicality .6, … }
+translator  { creativity .8, assertiveness .8, technicality .1, … }
+                                              ^^^^^^^^^^^^^^^^
+```
+
+Both want maximum inference and opposite vocabulary. An enum forces them into
+whichever mode fits worse; a vector makes the argument structurally. Presets are
+starting points over the vector, not modes — an individual dial overrides one.
+
+**What made removing the conservatism safe** is that it was redundant. The
+two-tier model already prevents fabrication: a proposal enters as an open item or
+an assumption, an open item gets a question, an assumption carries a `basis` the
+user can check, and only something settled becomes a Decision. The blanket rule
+was belt-and-braces over a structural guarantee, and it cost the product its
+purpose. `TIERS` now says the tiers are what make thinking out loud *safe*, which
+is the sentence the creativity dial needs to mean anything.
+
+### The measurement, because the same file had already failed once at this
+
+`QUESTIONS_INSTRUCTIONS` contained *"You are not a question-asking machine"*
+**twice** — top and bottom of one prompt — and the questions stayed
+interrogatory. Prompt pleading loses to structural incentive, so a dial is
+assumed inert until observed otherwise.
+
+The cheapest experiment that settles it: same understanding, same verdict, same
+model, one dial moved, `generate-questions` only. **Two calls, $0.0698**, on
+`claude-haiku-4-5`.
+
+| creativity 0.1 | creativity 0.9 |
+| --- | --- |
+| *"Who will be responding to the DM?"* | *"How are the team members you're asking meaningfully differentiated in what you'd want to learn from them?"* |
+| *"What will the summary be used for?"* | *"What would have to change about how your team coordinates for these check-ins to feel worth the time?"* |
+| asks the user to supply facts they already hold | proposes that differentiation matters — the brief never mentioned it — and offers three axes |
+| **recall** | **recognition**, with the user's own situation described back to them: *"Today people don't know who's stuck until they ask in sync time."* |
+
+So the dial is not a placebo. **What it does not show**, stated because a single
+sample dressed as a benchmark is how this kind of change gets over-claimed: every
+high-creativity output is still a *question*. None is an "I assumed X, correct
+me" confirmation, so `assertiveness`'s effect on the analyze step — assumptions
+written down for veto — is unmeasured. One sample, one model, one fixture.
+
+### Three constraints that shaped the implementation
+
+- **A dial may never raise a ceiling.** `countsFor` clamps against
+  `maxQuestionsPerTurn` rather than replacing it, and `policyFor` derives from a
+  base so `requiredDimensions` survives. A slider that could redefine what
+  "understood" means would make `sufficient` say something different in every
+  session — the unfalsifiable verdict Phase 8 removed.
+- **Sampling temperature is deliberately not wired**, though it is what the word
+  means. It would move together with the prose and the counts, so no experiment
+  could attribute an effect to any of them. This repo has reversed two decisions
+  by being able to attribute; that is worth more than a fourth mechanism.
+- **The briefing is appended, never prepended**, so the stable body stays a
+  shared cache prefix. Pinned by a test, because the failure mode is a bill
+  rather than an error.
+
 ## Patterns worth reusing
 
 - **Pass the mutator in, don't return the mutation.** `runTurn` hands `merge` to
