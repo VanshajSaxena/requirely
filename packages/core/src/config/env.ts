@@ -17,16 +17,42 @@ export type ReasoningProvider = z.infer<typeof ReasoningProvider>;
 export type TranscriptionProvider = z.infer<typeof TranscriptionProvider>;
 export type TurnStrategy = z.infer<typeof TurnStrategy>;
 
+/**
+ * An optional setting, where **an empty variable means absent**.
+ *
+ * `z.string().min(1).optional()` does not do this, and the difference shipped as
+ * a bug. `.optional()` admits `undefined`; a variable written as
+ * `DEEPSEEK_API_KEY=` with nothing after it is present and equal to `""`, which
+ * fails `.min(1)` — so `loadConfig` threw before anything ran.
+ *
+ * It broke on the most ordinary action available: `.env.example` lists every
+ * credential with an empty value, so copying it to `.env` — or adding a
+ * placeholder line for a provider you have not signed up for yet — took out
+ * every CLI command and eleven tests, with an error naming a key the session was
+ * never going to use.
+ *
+ * Trimmed as well, because `KEY= ` with a trailing space is the same intent and
+ * a worse failure: it passes `.min(1)` and reaches the provider as whitespace,
+ * which comes back as an authentication error rather than a configuration one.
+ */
+const optionalSetting = z
+  .string()
+  .optional()
+  .transform((value) => {
+    const trimmed = value?.trim();
+    return trimmed === undefined || trimmed === '' ? undefined : trimmed;
+  });
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 
-  DATABASE_URL: z.string().min(1).optional(),
+  DATABASE_URL: optionalSetting,
 
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  OPENAI_API_KEY: z.string().min(1).optional(),
-  GOOGLE_API_KEY: z.string().min(1).optional(),
-  DEEPSEEK_API_KEY: z.string().min(1).optional(),
+  ANTHROPIC_API_KEY: optionalSetting,
+  OPENAI_API_KEY: optionalSetting,
+  GOOGLE_API_KEY: optionalSetting,
+  DEEPSEEK_API_KEY: optionalSetting,
 
   REQUIRELY_REASONING_PROVIDER: ReasoningProvider.default('anthropic'),
   REQUIRELY_REASONING_MODEL: z.string().min(1).default('claude-opus-5'),

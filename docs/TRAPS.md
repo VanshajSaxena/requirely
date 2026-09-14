@@ -42,6 +42,20 @@ them, which is where you *will* hit them. This is the version you read on purpos
 - **Boundary checkers must not match prose.** An early version flagged the word
   "from" inside comments and template literals. False positives are how a checker
   gets switched off.
+- **`z.string().min(1).optional()` rejects an empty environment variable.**
+  `.optional()` admits `undefined`; `KEY=` with nothing after it is *present* and
+  equal to `""`, which fails `.min(1)`. This shipped, and it broke on the most
+  ordinary action available — `.env.example` lists every credential with an empty
+  value, so copying it to `.env`, or adding a placeholder line for a provider you
+  have not signed up for yet, made `loadConfig` throw and took out every CLI
+  command and eleven tests, naming a key the session was never going to use.
+  For anything read from an environment, empty must mean absent — and trim, since
+  `KEY= ` passes `.min(1)` and reaches the provider as whitespace, which comes
+  back as an authentication error rather than a configuration one.
+- **A provider's model-list endpoint reports what your key can SEE, not what it
+  can USE.** Three Gemini ids returned by `v1beta/models` were rejected on the
+  first real call with *"no longer available to new users"* — the listing is not
+  a capability check. If a model id matters, call it once.
 - **Zod `.default()` does not parse its argument** (see DECISIONS.md), and
   `.partial()` does not strip defaults. Both are silent data bugs.
 - **A balanced brace span is not necessarily JSON.** `extractJson` first returned

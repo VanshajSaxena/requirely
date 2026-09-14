@@ -128,3 +128,61 @@ describe('credentialFor', () => {
     ).toThrow(ConfigError);
   });
 });
+
+describe('an empty variable means absent', () => {
+  /**
+   * **This shipped as a bug and broke on the most ordinary action available.**
+   * `.env.example` lists every credential with an empty value, so copying it to
+   * `.env` — or adding a placeholder line for a provider you have not signed up
+   * for yet — made `loadConfig` throw, taking out every CLI command and eleven
+   * tests, with an error naming a key the session was never going to use.
+   *
+   * `z.string().min(1).optional()` was the cause: `.optional()` admits
+   * `undefined`, and `KEY=` is present and equal to `""`.
+   */
+  it('does not reject a credential written with no value', () => {
+    expect(() =>
+      loadConfig({
+        ...FAKE_PROVIDERS,
+        DEEPSEEK_API_KEY: '',
+        GOOGLE_API_KEY: '',
+        DATABASE_URL: '',
+      }),
+    ).not.toThrow();
+  });
+
+  it('reports an empty variable as undefined, not as an empty string', () => {
+    // A caller branching on `credentials.deepseek !== undefined` must see the
+    // same thing whether the line is absent or blank.
+    const config = loadConfig({ ...FAKE_PROVIDERS, DEEPSEEK_API_KEY: '', DATABASE_URL: '' });
+    expect(config.credentials.deepseek).toBeUndefined();
+    expect(config.databaseUrl).toBeUndefined();
+  });
+
+  it('treats a whitespace-only value the same way', () => {
+    // Worse than empty if left alone: it passes `.min(1)` and reaches the
+    // provider as whitespace, coming back as an authentication error rather
+    // than a configuration one.
+    expect(
+      loadConfig({ ...FAKE_PROVIDERS, OPENAI_API_KEY: '   ' }).credentials.openai,
+    ).toBeUndefined();
+  });
+
+  it('still fails when the chosen provider has a blank key rather than a missing one', () => {
+    // The eager credential check must not be weakened by this: a blank key for
+    // the provider you actually selected is still a startup error.
+    expect(() =>
+      loadConfig({
+        REQUIRELY_REASONING_PROVIDER: 'google',
+        REQUIRELY_TRANSCRIPTION_PROVIDER: 'none',
+        GOOGLE_API_KEY: '',
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('trims a value that is set, so a stray newline cannot reach a provider', () => {
+    expect(
+      loadConfig({ ...FAKE_PROVIDERS, ANTHROPIC_API_KEY: '  sk-ant-xyz  ' }).credentials.anthropic,
+    ).toBe('sk-ant-xyz');
+  });
+});
