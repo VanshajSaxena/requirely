@@ -681,6 +681,15 @@ things that will surprise a user — that is why they are written down at all.
   is an additive migration. `Decision.settledBy` being a durable id rather than a
   tag is what makes "which user settled this?" answerable when it arrives — the
   whole reason `settledBy: 'user'` was rejected during the Phase 8 design.
+- **A `revise` carrying fields that do not belong to its target has them
+  silently stripped.** `decodePatch` puts every filled field into the patch and
+  the domain's per-collection patch schema drops what it does not recognise — so
+  a revise of a requirement that also sets `category` and `risk` parses cleanly
+  and applies only `priority`. **Desired**, not a bug: the revise still applies
+  the parts that were valid, and stripping is the safe direction. Logging it is
+  the most it would ever warrant, and that is not free — `decodeWireDelta` is
+  pure and boundary rule 6 restricts `wire/` to importing `domain/` only, so a
+  logger cannot reach it without breaking that rule for something nobody needs.
 - **`--memory` makes the CLI single-process only.** `new` prints an id the next
   command cannot find, because the store died with the process. It is a fine
   default for a test driving one process and a broken one for a user, so the

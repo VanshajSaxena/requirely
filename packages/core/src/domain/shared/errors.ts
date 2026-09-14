@@ -56,6 +56,41 @@ export class DuplicateIdError extends DomainError {
 }
 
 /**
+ * Storage rejected a write because something is already there.
+ *
+ * **Thrown by adapters so no vendor error type reaches a caller** — the same rule
+ * `CapabilityError` enforces for AI providers, applied to the other boundary. Both
+ * adapters used to throw whatever they had: Postgres re-threw the driver's error
+ * and the in-memory store threw a plain `Error`, so telling "this id is taken"
+ * apart from "the connection died" meant reading vendor fields, which is the leak
+ * the architecture otherwise forbids.
+ *
+ * Distinct from `DuplicateIdError`, and the difference is worth keeping straight:
+ * that one means the `IdGenerator` handed back a colliding id *inside one
+ * document*, before anything was stored. This one means the **database** already
+ * holds a row with that key. Different cause, different fix — one is an
+ * infrastructure bug, the other is usually a replayed or concurrent write.
+ *
+ * `constraint` carries the database's own name for what was violated
+ * (`sessions_pkey`, `turns_session_index_key`) when the driver reports one, which
+ * is the difference between "a conflict" and "this session already has turn 3".
+ */
+export class ConflictError extends DomainError {
+  readonly constraint: string | null;
+
+  constructor(
+    what: string,
+    detail: string,
+    options?: { constraint?: string | undefined; cause?: unknown },
+  ) {
+    super('CONFLICT', `${what} conflicts with what is already stored: ${detail}`, {
+      cause: options?.cause,
+    });
+    this.constraint = options?.constraint ?? null;
+  }
+}
+
+/**
  * A promoted or added Decision named nothing that settled it.
  *
  * Distinct from `UnknownReferenceError`, which means a reference pointed at

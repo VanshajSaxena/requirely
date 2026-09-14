@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   Answer,
   AnswerId,
+  ConflictError,
   type InquiryRepository,
   type Question,
   QuestionId,
@@ -219,6 +220,13 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
         expect(await stores.sessions.findById(session.id)).toEqual(session);
       });
 
+      it('refuses to create the same session twice', async () => {
+        const session = fixtures.session();
+        await stores.sessions.create(session);
+
+        await expect(stores.sessions.create(session)).rejects.toThrow(ConflictError);
+      });
+
       it('returns null for an unknown id rather than throwing', async () => {
         expect(await stores.sessions.findById(fixtures.session().id)).toBeNull();
       });
@@ -379,7 +387,12 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
           turn: { ...commit.turn, understandingAfter: 'rev-999' },
         };
 
-        await expect(stores.committer.commit(broken as TurnCommit)).rejects.toThrow();
+        // Deliberately *not* a `ConflictError`: nothing was already stored, the
+        // command simply did not hold together. Collapsing the two would tell a
+        // caller to retry a command that can never succeed.
+        await expect(stores.committer.commit(broken as TurnCommit)).rejects.not.toThrow(
+          ConflictError,
+        );
         expect(await stores.understanding.findById(commit.revision.id)).toBeNull();
         expect(await stores.sessions.listTurns(commit.session.id)).toEqual([]);
       });
@@ -395,7 +408,12 @@ export function describeStorageContract(name: string, setup: () => Promise<Contr
           questions: [{ ...first.questions[0], id: 'qst-ghost' }],
         });
 
-        await expect(stores.committer.commit(clashing)).rejects.toThrow();
+        // The **type**, not just "it threw". Both adapters already rejected this;
+        // what was missing is that a caller could not tell "already stored" from
+        // "the connection died" without reading vendor fields. Asserting it here
+        // is what stops the two implementations drifting on that answer — the
+        // same job this suite already does for their constraint behaviour.
+        await expect(stores.committer.commit(clashing)).rejects.toThrow(ConflictError);
         expect(await stores.inquiry.findQuestion(questionId('qst-ghost'))).toBeNull();
         expect(await stores.sessions.listTurns(first.session.id)).toHaveLength(1);
       });

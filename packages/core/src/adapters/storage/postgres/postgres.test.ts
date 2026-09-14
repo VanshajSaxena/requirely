@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { QuestionId } from '../../../domain/index.ts';
+import { ConflictError, QuestionId } from '../../../domain/index.ts';
 import { describeStorageContract, fixtures } from '../storage-contract.ts';
 import { postgresStores } from './repositories.ts';
 import { createTestDatabase } from './testing.ts';
@@ -59,6 +59,42 @@ describe('a row written by an older version of the code', () => {
     expect(failure).toContain('options.0.means');
     // The sentence that would have turned this from a puzzle into a one-liner.
     expect(failure).toContain('data migration');
+
+    await database.close();
+  });
+});
+
+/**
+ * The cause-walk in `uniqueViolation`, pinned.
+ *
+ * Lives here rather than in the shared contract because it is a *driver* fact,
+ * not a port guarantee: the in-memory adapter has no constraint names to report.
+ * The contract asserts the error type across both adapters; this asserts that
+ * the translation actually reached the driver's own answer.
+ *
+ * **Why it needs a test at all.** Drizzle wraps every driver error, so `.code`
+ * sits on `error.cause` rather than on the error — a plain
+ * `error.code === '23505'` matches nothing, fails silently, and the mapping
+ * simply never fires until a real duplicate reaches production. Nothing else in
+ * the suite would notice, because "it threw" stays true either way.
+ */
+describe('translating a unique violation', () => {
+  it('reaches through the drizzle wrapper for the constraint name', async () => {
+    const database = await createTestDatabase();
+    const stores = postgresStores(database.db);
+    const session = fixtures.session();
+    await stores.sessions.create(session);
+
+    const error = await stores.sessions
+      .create(session)
+      .then(() => null)
+      .catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(ConflictError);
+    expect((error as ConflictError).constraint).toBe('sessions_pkey');
+    // The driver's error is kept as the cause: translating must not throw away
+    // what a person debugging a real incident would want.
+    expect((error as ConflictError).cause).toBeDefined();
 
     await database.close();
   });

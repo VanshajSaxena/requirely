@@ -15,15 +15,6 @@ Both were split out of this file; nothing was lost.
 
 ---
 
-## Being tackled
-
-| # | Weakness | State |
-| --- | --- | --- |
-| B1 | **Constraint violations surface as raw driver errors.** Postgres throws a `postgres.js` error with code `23505`; the in-memory adapter throws a plain `Error`. Neither is a domain type, so a caller cannot tell "duplicate" from "connection died" without reading vendor fields — a small version of the leak the architecture otherwise forbids. | **Planned.** Wants a `ConflictError` mapped in both adapters. |
-| B2 | **Domain errors report at paths the model never saw.** A failure `decode` catches says `ops[3].kind`, which a model can act on. One that slips through to `UnderstandingDelta.parse` says `requirements.add.0.kind` — a path in a schema the model was never shown. | **Planned.** Move per-kind narrowing into `decode`. Also shrinks the `WireItem` risk (#16). |
-
----
-
 ## The gap that matters most
 
 ### The loop does not close on real input — the biggest gap in the product
@@ -121,6 +112,7 @@ is an ADR commitment, not an oversight.
 | 14 | **Large audio is not chunked.** Above the provider's file-size limit, transcription fails with the vendor's message. | **Defer.** Nothing needs it, and failing loudly beats truncating silently. |
 | 15 | **Code ingestion does not exist.** The `code` `SourceKind` stays in the enum with nothing producing it. | **Deferred by owner.** When it arrives, scope is the open question: a repository's full text is exactly the unbounded growth #3 warns about, so it needs a byte budget enforced at the ingestion boundary. |
 | 16 | **The wire's loose `WireItem` moves validation risk into the codec.** `WireOp` is a superset — an assumption's `basis` and a constraint's `category` side by side — so `decode` narrows it per target. If `decode` is wrong, wrongly shaped data reaches the domain. | **Defer**, and B2 shrinks it. Two mitigations are real: the domain schema re-parses everything, and `decode` is pure with 24 tests. Revisit if the wire grows a target. |
+| 18 | **`applyDelta`'s failures are fatal rather than re-askable.** A decision citing nothing and a promote naming a missing item both *pass* the codec cleanly, then throw `UnsettledDecisionError` / `UnknownReferenceError` from `applyDelta` inside `merge()` — which `strategies.ts` calls between the analyze and assess calls, outside the generator, so `withValidationRetry` structurally cannot see them. A paid turn is lost. Observed live: the turn that cited a `qst-` id in `settledBySourceId`. | **Low priority, deferred.** The fix needs the codec to take per-turn context (`knownSourceIds`, open item ids) and stop being a module constant. Same root as the loop gap above. |
 | 17 | **The `analyze` and `assess` prompts are unmeasured for quality.** Phase 10 measured one dial on the *questions* prompt — creativity 0.1 produced extraction, 0.9 produced hypotheses (see DECISIONS.md) — but nothing has measured whether `analyze` produces good requirements or `assess` scores usefully. | **Defer with #7.** Both need cassettes plus a second model to compare against. |
 
 ---

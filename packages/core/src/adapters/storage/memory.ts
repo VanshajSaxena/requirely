@@ -1,6 +1,7 @@
 import {
   type Answer,
   type AnswerId,
+  ConflictError,
   type InquiryRepository,
   type Question,
   type QuestionId,
@@ -76,6 +77,14 @@ export function inMemoryStores(): MemoryStores {
 
   const sessions: SessionRepository = {
     async create(session) {
+      // `sessions.id` is a primary key, so Postgres rejects this; a bare
+      // `Map.set` would overwrite. Found by the contract suite the day it
+      // started asserting the error *type* — the same divergence the committer
+      // below already guards against, in the one method that had been missed.
+      // `save` is the upsert; `create` means create.
+      if (db.sessions.has(session.id)) {
+        throw new ConflictError(`Session ${session.id}`, 'a session with that id already exists');
+      }
       db.sessions.set(session.id, clone(session));
     },
     async findById(id: SessionId) {
@@ -197,7 +206,11 @@ export function inMemoryStores(): MemoryStores {
       ].filter((conflict): conflict is string => typeof conflict === 'string');
 
       if (conflicts.length > 0) {
-        throw new Error(`Commit conflicts with stored data: ${conflicts.join('; ')}`);
+        // A domain type, not a plain Error — the whole point of reproducing
+        // Postgres's constraints by hand is that the two adapters fail the same
+        // way, and "throws something" is not the same way. The shared contract
+        // suite asserts the type, which is what keeps them honest.
+        throw new ConflictError('This commit', conflicts.join('; '));
       }
 
       // Everything below is a synchronous Map write, so once the checks above

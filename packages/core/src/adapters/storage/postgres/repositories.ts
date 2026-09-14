@@ -3,6 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   Answer,
   type AnswerId,
+  ConflictError,
   type InquiryRepository,
   Question,
   type QuestionId,
@@ -105,6 +106,84 @@ function parseRow<T>(
   );
 }
 
+/** Postgres `unique_violation`. The only driver code this adapter translates. */
+const UNIQUE_VIOLATION = '23505';
+
+interface UniqueViolation {
+  readonly constraint: string | undefined;
+  readonly detail: string | undefined;
+}
+
+const text_ = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.length > 0 ? value : undefined;
+
+/**
+ * The driver's unique-violation details, or `null` — found by walking `cause`.
+ *
+ * **Two things here are measured, and both are load-bearing.**
+ *
+ * *`.code` is on the cause, not on the error.* Drizzle wraps every driver error
+ * in a `DrizzleQueryError`, so a duplicate key arrives as:
+ *
+ * ```
+ * [0] DrizzleQueryError   code=undefined   "Failed query: insert into sessions..."
+ * [1] <driver error>      code="23505"     constraint="sessions_pkey"
+ * ```
+ *
+ * A plain `error.code === '23505'` therefore never matches — and nothing fails,
+ * it just silently never fires until a real duplicate reaches production.
+ *
+ * *Duck-typed, never `instanceof`.* The driver's error class is minified (it
+ * reports as `N`), and tests run on PGlite while production runs on postgres-js —
+ * two different packages, so there is no shared type to test against. The wire
+ * protocol's `code` is the one thing both genuinely share.
+ */
+function uniqueViolation(error: unknown): UniqueViolation | null {
+  for (let current = error, depth = 0; current != null && depth < 5; depth += 1) {
+    const it = current as Record<string, unknown>;
+    if (it['code'] === UNIQUE_VIOLATION) {
+      return {
+        // `constraint` on PGlite and node-postgres, `constraint_name` on
+        // postgres-js. Tests run on the first and production on the second, so
+        // reading only one would pass CI and report `null` in production — the
+        // precise divergence this adapter's two-driver setup invites. Measured,
+        // not assumed: PGlite reports `constraint: 'sessions_pkey'`.
+        constraint: text_(it['constraint']) ?? text_(it['constraint_name']),
+        // The driver's own sentence, and it is better than anything constructed
+        // here: "Key (id)=(ses-1) already exists." names the column and the
+        // value, which a generic message cannot.
+        detail: text_(it['detail']),
+      };
+    }
+    current = it['cause'];
+  }
+  return null;
+}
+
+/**
+ * Runs a write, translating a unique violation into a domain error.
+ *
+ * Only wraps writes that can actually raise one: `sessions.create` and the commit
+ * transaction. `sessions.save` and `sources.add` are upserts, so wrapping them
+ * would be a branch no test could ever reach.
+ */
+async function writing<T>(what: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    const violation = uniqueViolation(error);
+    if (violation === null) throw error;
+    throw new ConflictError(
+      what,
+      violation.detail ??
+        (violation.constraint === undefined
+          ? 'a unique constraint rejected it'
+          : `it violates ${violation.constraint}`),
+      { constraint: violation.constraint, cause: error },
+    );
+  }
+}
+
 // `version` is intentionally absent from the domain Session, so it is dropped here.
 const toSession = (row: SessionRow): Session =>
   parseRow(
@@ -183,7 +262,9 @@ const sourceValues = (source: Source) => ({
 export function postgresSessionRepository(db: Database): SessionRepository {
   return {
     async create(session) {
-      await db.insert(sessions).values(sessionValues(session));
+      await writing(`Session ${session.id}`, () =>
+        db.insert(sessions).values(sessionValues(session)),
+      );
     },
 
     async findById(id: SessionId) {
@@ -366,74 +447,76 @@ export function postgresTurnCommitter(db: Database): TurnCommitter {
     async commit(incoming) {
       const command = TurnCommit.parse(incoming);
 
-      await db.transaction(async (tx) => {
-        await tx.insert(understandingRevisions).values({
-          id: command.revision.id,
-          sessionId: command.revision.sessionId,
-          revision: command.revision.revision,
-          producedByTurnId: command.revision.producedByTurnId,
-          content: command.revision.content,
-          createdAt: fromTimestamp(command.revision.createdAt),
-        });
-
-        await tx.insert(turns).values({
-          id: command.turn.id,
-          sessionId: command.turn.sessionId,
-          turnIndex: command.turn.index,
-          trigger: command.turn.trigger,
-          inputSourceIds: [...command.turn.inputSourceIds],
-          inputAnswerIds: [...command.turn.inputAnswerIds],
-          understandingBefore: command.turn.understandingBefore,
-          understandingAfter: command.turn.understandingAfter,
-          verdict: command.turn.verdict,
-          temperament: command.turn.temperament,
-          usage: [...command.turn.usage],
-          startedAt: fromTimestamp(command.turn.startedAt),
-          completedAt: fromTimestamp(command.turn.completedAt),
-        });
-
-        if (command.questions.length > 0) {
-          await tx.insert(questions).values(
-            command.questions.map((question) => ({
-              id: question.id,
-              sessionId: question.sessionId,
-              turnId: question.turnId,
-              dimension: question.dimension,
-              about: question.about,
-              text: question.text,
-              mode: question.mode,
-              options: [...question.options],
-              rationale: question.rationale,
-              recommends: question.recommends,
-              because: question.because,
-              askedAt: fromTimestamp(question.askedAt),
-            })),
-          );
-        }
-
-        if (command.answers.length > 0) {
-          await tx.insert(answers).values(
-            command.answers.map((answer) => ({
-              id: answer.id,
-              questionId: answer.questionId,
-              disposition: answer.disposition,
-              selectedOptionIds: [...answer.selectedOptionIds],
-              customText: answer.customText,
-              additionalContext: answer.additionalContext,
-              answeredAt: fromTimestamp(answer.answeredAt),
-            })),
-          );
-        }
-
-        const values = sessionValues(command.session);
-        await tx
-          .insert(sessions)
-          .values(values)
-          .onConflictDoUpdate({
-            target: sessions.id,
-            set: { ...values, version: sql`${sessions.version} + 1` },
+      await writing(`Turn ${command.turn.id}`, () =>
+        db.transaction(async (tx) => {
+          await tx.insert(understandingRevisions).values({
+            id: command.revision.id,
+            sessionId: command.revision.sessionId,
+            revision: command.revision.revision,
+            producedByTurnId: command.revision.producedByTurnId,
+            content: command.revision.content,
+            createdAt: fromTimestamp(command.revision.createdAt),
           });
-      });
+
+          await tx.insert(turns).values({
+            id: command.turn.id,
+            sessionId: command.turn.sessionId,
+            turnIndex: command.turn.index,
+            trigger: command.turn.trigger,
+            inputSourceIds: [...command.turn.inputSourceIds],
+            inputAnswerIds: [...command.turn.inputAnswerIds],
+            understandingBefore: command.turn.understandingBefore,
+            understandingAfter: command.turn.understandingAfter,
+            verdict: command.turn.verdict,
+            temperament: command.turn.temperament,
+            usage: [...command.turn.usage],
+            startedAt: fromTimestamp(command.turn.startedAt),
+            completedAt: fromTimestamp(command.turn.completedAt),
+          });
+
+          if (command.questions.length > 0) {
+            await tx.insert(questions).values(
+              command.questions.map((question) => ({
+                id: question.id,
+                sessionId: question.sessionId,
+                turnId: question.turnId,
+                dimension: question.dimension,
+                about: question.about,
+                text: question.text,
+                mode: question.mode,
+                options: [...question.options],
+                rationale: question.rationale,
+                recommends: question.recommends,
+                because: question.because,
+                askedAt: fromTimestamp(question.askedAt),
+              })),
+            );
+          }
+
+          if (command.answers.length > 0) {
+            await tx.insert(answers).values(
+              command.answers.map((answer) => ({
+                id: answer.id,
+                questionId: answer.questionId,
+                disposition: answer.disposition,
+                selectedOptionIds: [...answer.selectedOptionIds],
+                customText: answer.customText,
+                additionalContext: answer.additionalContext,
+                answeredAt: fromTimestamp(answer.answeredAt),
+              })),
+            );
+          }
+
+          const values = sessionValues(command.session);
+          await tx
+            .insert(sessions)
+            .values(values)
+            .onConflictDoUpdate({
+              target: sessions.id,
+              set: { ...values, version: sql`${sessions.version} + 1` },
+            });
+        }),
+      );
     },
   };
 }
