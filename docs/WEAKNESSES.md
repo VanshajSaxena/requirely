@@ -346,8 +346,41 @@ thing that gets rediscovered painfully.
   pass vacuously.** Renaming `blockingGapIds` → `blockingItemIds` left one policy
   test parsing `blockingGapIds` into nothing: the assertion still ran, against an
   empty list, and reported the veto working when it was not being exercised at
-  all. After renaming a field, grep for the old name in fixtures — the compiler
-  will not.
+  all. After renaming a field, grep for the old name in fixtures **and in the
+  database** — the compiler will not.
+
+  **"And in the database" was added after this lesson failed a second time.** The
+  entry above said *fixtures*, so renaming `QuestionOption.commits` → `means` got
+  a careful grep of the source tree — eighteen files, all correct — and no
+  thought at all about the eight rows already holding the old key. Every read of
+  that session then threw. The lesson was right and scoped one word too narrowly;
+  see the drizzle-kit sharp edge below for why nothing caught it.
+- **drizzle-kit cannot see inside a `jsonb` column, so a rename there is invisible
+  to migration generation.** `jsonb('options').$type<QuestionOption[]>()` — the
+  `$type<>` is a TypeScript assertion with no runtime or DDL presence. In one
+  phase, two *columns* were added and one field inside a JSONB blob was renamed;
+  `pnpm db:generate` produced migrations for both columns and was structurally
+  silent about the rename. **Eight columns of this schema carry Zod-validated
+  shapes that no schema-diffing tool will ever check.**
+
+  The three shape changes had three different fates, and the pattern is the
+  useful part:
+
+  | Change | Seen by drizzle-kit? | Survives an old row? |
+  | --- | --- | --- |
+  | **add** a field | yes — it is a column | yes, migration backfills |
+  | **delete** a field | n/a | yes — Zod strips unknown keys |
+  | **rename** a field inside JSONB | **no** | **no** — new name required, old one ignored |
+
+  A rename is the only change that is both undetectable by the tooling and fatal
+  to the reader. Everything else degrades safely on its own, which is exactly why
+  this one was the one that shipped.
+- **`pnpm verify` cannot observe a row written by an older version of the code.**
+  PGlite builds an empty database per suite, applies migrations to it, then writes
+  and reads in the *current* shape. A migration that is correct for new rows and
+  incomplete for existing ones is indistinguishable from a correct one. The only
+  way to have such a row in a test is to write one deliberately —
+  `postgres.test.ts` now does.
 - **`unpdf` rejects a Node `Buffer`** — *"Please provide binary data as
   `Uint8Array`, rather than `Buffer`"* — even though `Buffer` extends
   `Uint8Array` and satisfies the port's type. Any caller using `fs.readFile`

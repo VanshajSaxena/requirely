@@ -207,5 +207,35 @@ export function renderAnswer(question: Question, answer: Answer): string {
 export const dialsLine = (temperament: Temperament): string =>
   `dials  ${DIAL_NAMES.map((dial) => `${dial} ${temperament[dial].toFixed(2)}`).join(' · ')}`;
 
+/**
+ * One line a person can act on, from whatever was thrown.
+ *
+ * **A `ZodError`'s `message` is a JSON dump of its `issues`**, and `main.ts`
+ * prints `error.message` — so any validation failure that reached the top of the
+ * CLI arrived as a twelve-line array with no sentence in it. That happened twice:
+ * once for `--creativity 9`, patched at the point of use, and once for a stored
+ * row whose shape had drifted. Patching call sites one at a time was the wrong
+ * shape of fix; this is the backstop.
+ *
+ * Duck-typed on `issues` rather than `instanceof ZodError`, because `apps/cli`
+ * does not depend on zod and should not start in order to format an error.
+ */
+export function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const issues = (error as { issues?: unknown }).issues;
+  if (!Array.isArray(issues) || issues.length === 0) return error.message;
+
+  const lines = issues.slice(0, 5).map((raw) => {
+    const issue = raw as { path?: readonly unknown[]; message?: string };
+    const where = (issue.path ?? []).join('.');
+    return `  ${where === '' ? '(value)' : where}: ${issue.message ?? 'invalid'}`;
+  });
+  const more =
+    issues.length > lines.length ? `\n  ...and ${issues.length - lines.length} more` : '';
+
+  return `Some values did not match what was expected:\n${lines.join('\n')}${more}`;
+}
+
 export const heading = (text: string): string => `\n${bold(text)}`;
 export const note = (text: string): string => dim(text);

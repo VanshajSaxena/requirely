@@ -78,7 +78,17 @@ Consequences worth knowing:
 - **`TurnCommit` self-validates cross-references** (turn ↔ revision, question → turn, `turn.index === revision.revision`). An engine bug fails at the boundary instead of becoming a data problem.
 - **Both adapters pass one contract suite** (`adapters/storage/storage-contract.ts`). In-memory reproduces Postgres's unique constraints by hand — without that it was silently more permissive, and the suite caught it.
 - **Timestamps are `timestamptz(3)`**, converted at the mapper boundary by `toTimestamp`/`fromTimestamp` in `postgres/repositories.ts`. This was `text` at first, justified by "ISO-8601 UTC sorts correctly as text" — which is only true if every writer emits the identical canonical format, and no constraint can enforce that. Measured: text accepts `'not a date'`, orders `'…T23:00:00+05:30' > '…T18:00:00.000Z'` as `true` when the truth is `false`, and needs a `::timestamptz` cast for any temporal predicate — which defeats the index. `precision: 3` pins the column to what `Date.toISOString()` can represent, so lossless round-tripping is a schema guarantee rather than a property that holds only while our code is the sole writer.
-- **Tests use PGlite** (Postgres in WASM, in-process). `docker-compose up -d` is for developing against a real server.
+- **Renaming a field inside a `jsonb` column needs a hand-written data migration,
+  and nothing will tell you.** `jsonb('options').$type<QuestionOption[]>()` — the
+  `$type<>` is a TypeScript assertion with no DDL presence, so drizzle-kit diffs
+  the column and never its contents. Eight columns here carry Zod-validated
+  shapes that no schema diff will ever check. *Adding* a field is a column
+  drizzle-kit sees; *deleting* one is absorbed because Zod strips unknown keys;
+  **renaming** one is invisible to the tool and fatal to the reader, because the
+  new name is required and the old one is silently ignored. `0003` is the worked
+  example, including the `ORDER BY ord` that keeps array order — `jsonb_agg`
+  without it has none, and option order is meaningful.
+- **Tests use PGlite** (Postgres in WASM, in-process). `docker-compose up -d` is for developing against a real server. Note what this cannot see: every suite starts from an empty database and writes in the *current* shape, so a row written by an older version of the code does not exist unless a test writes one on purpose. `postgres.test.ts` has one, as the regression test for the rename above.
 - `version` exists on `sessions` and is bumped on write but **not enforced**, and deliberately absent from the domain `Session`.
 
 ## Engine orientation

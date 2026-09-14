@@ -69,36 +69,88 @@ type AnswerRow = typeof answers.$inferSelect;
 const toTimestamp = (value: Date): Timestamp => value.toISOString();
 const fromTimestamp = (value: Timestamp): Date => new Date(value);
 
+/**
+ * Parses a row, and says *which* row when it does not match.
+ *
+ * **Written after a stored-shape mismatch surfaced as a bare JSON array.**
+ * Renaming `QuestionOption.commits` to `means` left eight rows carrying the old
+ * key inside `questions.options`, and the read failed with four Zod issues whose
+ * only `path` was `options.0.means` — no table, no id, no session, and nothing
+ * saying the data came from a database rather than from a model. A `ZodError`'s
+ * `message` *is* a dump of its issues, and `apps/cli` prints `error.message`.
+ *
+ * The database is an untrusted boundary, which is why these parses exist at all.
+ * This adds the only thing a parse at a boundary cannot infer: which side of it
+ * the bad value came from, and which row.
+ */
+function parseRow<T>(
+  schema: {
+    safeParse(value: unknown): { success: true; data: T } | { success: false; error: unknown };
+  },
+  row: unknown,
+  table: string,
+  id: unknown,
+): T {
+  const result = schema.safeParse(row);
+  if (result.success) return result.data;
+
+  const issues =
+    (result.error as { issues?: readonly { path: readonly unknown[] }[] }).issues ?? [];
+  const fields = [...new Set(issues.map((issue) => issue.path.join('.')))].join(', ');
+  throw new Error(
+    `Stored ${table} row ${String(id)} does not match the current schema (${fields || 'unknown field'}). ` +
+      'This usually means a schema change shipped without a data migration — note that ' +
+      'drizzle-kit cannot see renames inside a jsonb column.',
+    { cause: result.error },
+  );
+}
+
 // `version` is intentionally absent from the domain Session, so it is dropped here.
 const toSession = (row: SessionRow): Session =>
-  Session.parse({
-    ...row,
-    createdAt: toTimestamp(row.createdAt),
-    updatedAt: toTimestamp(row.updatedAt),
-  });
+  parseRow(
+    Session,
+    { ...row, createdAt: toTimestamp(row.createdAt), updatedAt: toTimestamp(row.updatedAt) },
+    'session',
+    row.id,
+  );
 
 const toSource = (row: SourceRow): Source =>
-  Source.parse({ ...row, ingestedAt: toTimestamp(row.ingestedAt) });
+  parseRow(Source, { ...row, ingestedAt: toTimestamp(row.ingestedAt) }, 'source', row.id);
 
 const toRevision = (row: RevisionRow): UnderstandingRevision =>
-  UnderstandingRevision.parse({ ...row, createdAt: toTimestamp(row.createdAt) });
+  parseRow(
+    UnderstandingRevision,
+    { ...row, createdAt: toTimestamp(row.createdAt) },
+    'understanding revision',
+    row.id,
+  );
 
 const toTurn = (row: TurnRow): Turn =>
-  Turn.parse({
-    ...row,
-    index: row.turnIndex,
-    turnIndex: undefined,
-    startedAt: toTimestamp(row.startedAt),
-    completedAt: toTimestamp(row.completedAt),
-  });
+  parseRow(
+    Turn,
+    {
+      ...row,
+      index: row.turnIndex,
+      turnIndex: undefined,
+      startedAt: toTimestamp(row.startedAt),
+      completedAt: toTimestamp(row.completedAt),
+    },
+    'turn',
+    row.id,
+  );
 
 const toQuestion = (row: QuestionRow): Question =>
   // `allowsCustom` has no column: the domain pins it to `true`, so it is
   // reconstructed rather than stored.
-  Question.parse({ ...row, allowsCustom: true, askedAt: toTimestamp(row.askedAt) });
+  parseRow(
+    Question,
+    { ...row, allowsCustom: true, askedAt: toTimestamp(row.askedAt) },
+    'question',
+    row.id,
+  );
 
 const toAnswer = (row: AnswerRow): Answer =>
-  Answer.parse({ ...row, answeredAt: toTimestamp(row.answeredAt) });
+  parseRow(Answer, { ...row, answeredAt: toTimestamp(row.answeredAt) }, 'answer', row.id);
 
 const sessionValues = (session: Session) => ({
   id: session.id,

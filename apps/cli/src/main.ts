@@ -7,6 +7,7 @@ import { listSessions, newSession, showStatus } from './commands/session.ts';
 import { answerQuestions, runOneTurn } from './commands/turn.ts';
 import { type CliRuntime, createCliRuntime } from './compose.ts';
 import { temperamentFrom } from './dials.ts';
+import { describeError } from './render.ts';
 
 /**
  * The entry point.
@@ -211,6 +212,6 @@ main()
   .catch((error: unknown) => {
     // A CLI's job at this point is to say what went wrong, not to prove it has a
     // stack. `--verbose` is where the detail lives.
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`${describeError(error)}\n`);
     process.exitCode = 1;
   });
