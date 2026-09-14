@@ -76,7 +76,7 @@ it, which needs no entity at all.
 to flip its content and never deleted; a new one is written and the old is marked
 `supersededBy`. Three consequences, each deliberate:
 
-- `decisions[]` grows monotonically. That is weakness #6 reintroduced *as a
+- `decisions[]` grows monotonically. That is the unbounded-growth shape reintroduced *as a
   commitment* — the trail of supersessions is the architectural history.
 - **There is no `status` enum.** Nygard's Proposed/Accepted/Deprecated/Superseded
   vocabulary is already covered: proposed-vs-accepted *is* the two-tier split,
@@ -658,6 +658,36 @@ written down for veto — is unmeasured. One sample, one model, one fixture.
 - **The briefing is appended, never prepended**, so the stable body stays a
   shared cache prefix. Pinned by a test, because the failure mode is a bill
   rather than an error.
+
+## Deliberate limitations
+
+Things Requirely does not do, on purpose. **Each of these was filed in
+`docs/WEAKNESSES.md` and moved here**, because none of them is open work: they
+have no tackle-or-defer answer, and leaving them on a backlog quietly invites
+someone to "fix" something that is behaving as designed. They are still real
+things that will surprise a user — that is why they are written down at all.
+
+- **`decisions[] ` never shrinks.** A superseded Decision is marked, never
+  removed. This is the ADR rule taken literally: *the trail of supersessions is
+  the architectural history of the system*, so pruning it would be pruning the
+  audit trail. It is the same unbounded-growth shape as the `Understanding`
+  weakness, reintroduced knowingly rather than overlooked, and
+  `currentDecisions()` is what makes it cost nothing to read.
+- **Media type comes from the file extension.** A `.pdf` that is really a ZIP
+  reaches `unpdf` and fails there rather than being caught up front. A wrong
+  extension is a user error worth surfacing rather than silently correcting.
+  Magic-byte sniffing is the upgrade if it ever becomes a nuisance.
+- **No auth, no multi-tenancy.** Session rows carry no `ownerId`, and adding one
+  is an additive migration. `Decision.settledBy` being a durable id rather than a
+  tag is what makes "which user settled this?" answerable when it arrives — the
+  whole reason `settledBy: 'user'` was rejected during the Phase 8 design.
+- **`--memory` makes the CLI single-process only.** `new` prints an id the next
+  command cannot find, because the store died with the process. It is a fine
+  default for a test driving one process and a broken one for a user, so the
+  entry point chooses Postgres and `--memory` is explicit — honest about
+  forgetting, which a silent in-memory default would not be. Also in
+  `docs/RUNNING.md` under "Things that will surprise you", where someone reaching
+  for it will actually be looking.
 
 ## Patterns worth reusing
 

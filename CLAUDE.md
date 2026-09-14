@@ -26,6 +26,9 @@ Do this after completing a single unit of work in-line in the Chat.
   each. Do not silently re-decide these.
 - **[docs/RUNNING.md](docs/RUNNING.md)** — clean clone to a generated SRS: Docker, the
   database, the `requirely` command, and the things that will surprise you.
+- **[docs/TRAPS.md](docs/TRAPS.md)** — library and toolchain traps that cost hours
+  each. Split out of WEAKNESSES.md: a trap has no fix, so it could never be
+  triaged off a backlog.
 
 Read `docs/PLAN.md`, then this file, then `packages/core/CLAUDE.md`.
 
