@@ -56,7 +56,7 @@ function requireAll(node: unknown, path = '', keepOptionalUnder?: RegExp): unkno
   for (const [key, value] of Object.entries(rec)) {
     if (key === 'properties' && value !== null && typeof value === 'object') {
       const props = value as Node;
-      rec['properties'] = Object.fromEntries(
+      rec.properties = Object.fromEntries(
         Object.entries(props).map(([k, v]) => [
           k,
           requireAll(v, `${path}.${k}`, keepOptionalUnder),
@@ -67,14 +67,14 @@ function requireAll(node: unknown, path = '', keepOptionalUnder?: RegExp): unkno
     }
   }
 
-  const props = rec['properties'];
+  const props = rec.properties;
   const exempt = keepOptionalUnder?.test(path) ?? false;
-  if (rec['type'] === 'object' && props !== null && typeof props === 'object' && !exempt) {
+  if (rec.type === 'object' && props !== null && typeof props === 'object' && !exempt) {
     const keys = Object.keys(props as Node);
-    const alreadyRequired = new Set(Array.isArray(rec['required']) ? rec['required'] : []);
-    rec['required'] = keys;
+    const alreadyRequired = new Set(Array.isArray(rec.required) ? rec.required : []);
+    rec.required = keys;
     // A property that used to be absent-able must now be expressible as null.
-    rec['properties'] = Object.fromEntries(
+    rec.properties = Object.fromEntries(
       Object.entries(props as Node).map(([k, v]) => [
         k,
         alreadyRequired.has(k) ? v : { anyOf: [v, { type: 'null' }] },

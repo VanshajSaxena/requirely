@@ -21,6 +21,24 @@ them, which is where you *will* hit them. This is the version you read on purpos
 - **Biome `overrides` entries *replace* each other per rule rather than merging.**
   An early boundary config silently caught only 2 of 4 planted violations. After
   changing any boundary rule, re-prove it by planting deliberate violations.
+- **A comment in `biome.json` does not fail the config — it floods.** Biome reads
+  its own config with comments tolerated, then *lints the same file* as plain
+  JSON, where `//` is a parse error. Measured: one comment took a clean run from
+  **174 files checked, 0 findings** to **368 files, 19,978 errors, 24,897
+  warnings** — because the config stops being honoured, `vcs.useIgnoreFile` with
+  it, and `node_modules` gets linted. Nothing says "your config is invalid".
+  Put reasoning in prose and keep `biome.json` plain, or rename it `.jsonc`.
+
+  Note the pair, because the two behave oppositely: an **unknown rule name** is
+  rejected loudly with a list of valid names (below), and a **comment** degrades
+  silently into forty thousand findings. Only one of those teaches you anything.
+- **Biome prints `info`-severity findings forever and exits 0.** The recommended
+  preset puts `useLiteralKeys` at `info`; it reached **45 occurrences — 421 of
+  `pnpm verify`'s 473 output lines** — each a bordered block with a code frame,
+  and the run stayed green. `--error-on-warnings` does not catch infos. Seven of
+  the 45 were added in one session by someone reading that output every few
+  minutes, which is the whole problem: a rule that reports and passes is a rule
+  people learn to scroll past. Either promote it to `error` or turn it off.
 - **Boundary checkers must not match prose.** An early version flagged the word
   "from" inside comments and template literals. False positives are how a checker
   gets switched off.

@@ -311,19 +311,19 @@ export function encodeWireDelta(delta: UnderstandingDelta): WireDelta {
 
   const content = (target: WireTarget, item: Record<string, unknown>): Partial<WireOp> => ({
     target,
-    statement: orAbsent((item['statement'] ?? item['description']) as string | null | undefined),
-    kind: orAbsent(item['kind'] as string | null | undefined),
-    category: orAbsent(item['category'] as string | null | undefined),
-    risk: orAbsent(item['risk'] as string | null | undefined),
-    priority: orAbsent(item['priority'] as string | null | undefined),
-    dimension: orAbsent(item['dimension'] as string | null | undefined),
-    blocking: booleanToFlag(item['blocking'] as boolean | undefined),
-    basis: orAbsent(item['basis'] as string | null | undefined),
-    rationale: orAbsent(item['rationale'] as string | null | undefined),
-    settledBySourceId: orAbsent(item['settledBySourceId'] as string | null | undefined),
-    supersedes: orAbsent(item['supersedes'] as string | null | undefined),
+    statement: orAbsent((item.statement ?? item.description) as string | null | undefined),
+    kind: orAbsent(item.kind as string | null | undefined),
+    category: orAbsent(item.category as string | null | undefined),
+    risk: orAbsent(item.risk as string | null | undefined),
+    priority: orAbsent(item.priority as string | null | undefined),
+    dimension: orAbsent(item.dimension as string | null | undefined),
+    blocking: booleanToFlag(item.blocking as boolean | undefined),
+    basis: orAbsent(item.basis as string | null | undefined),
+    rationale: orAbsent(item.rationale as string | null | undefined),
+    settledBySourceId: orAbsent(item.settledBySourceId as string | null | undefined),
+    supersedes: orAbsent(item.supersedes as string | null | undefined),
     provenance: provenanceOut(
-      (item['provenance'] ?? item['between'] ?? []) as {
+      (item.provenance ?? item.between ?? []) as {
         sourceId: string;
         quote: string | null;
         note: string | null;

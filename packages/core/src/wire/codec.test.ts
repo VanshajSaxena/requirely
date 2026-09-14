@@ -313,7 +313,7 @@ describe('round-trip — the property that makes drift a CI failure', () => {
     // The real guarantee is structural: `encodeWireDelta` takes a complete
     // `UnderstandingDelta`, so a new domain field with no wire home is a type
     // error. This case exists so the claim is visible in the test names too.
-    const everything = UnderstandingDelta.parse(CASES['additions']);
+    const everything = UnderstandingDelta.parse(CASES.additions);
     expect(z.encode(UnderstandingDeltaCodec, everything).ops).toHaveLength(4);
   });
 });

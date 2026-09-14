@@ -107,16 +107,16 @@ async function dispatch(
     case 'new': {
       const temperament = temperamentFrom(values);
       return newSession(runtime, {
-        title: values['title'] as string | undefined,
-        budget: number(values['budget'] as string | undefined),
+        title: values.title as string | undefined,
+        budget: number(values.budget as string | undefined),
         ...(temperament === undefined ? {} : { temperament }),
       });
     }
     case 'ls':
-      return listSessions(runtime, { limit: number(values['limit'] as string | undefined) });
+      return listSessions(runtime, { limit: number(values.limit as string | undefined) });
     case 'add':
       return addSource(runtime, need('session id', first), need('file path', second), {
-        label: values['label'] as string | undefined,
+        label: values.label as string | undefined,
       });
     case 'turn':
       return runOneTurn(runtime, need('session id', first));
@@ -129,15 +129,15 @@ async function dispatch(
       return answerQuestions(
         runtime,
         need('session id', first),
-        values['auto'] === true ? scriptedAsker(takeFirstOption) : clackAsker(),
-        { deferred: values['deferred'] === true },
+        values.auto === true ? scriptedAsker(takeFirstOption) : clackAsker(),
+        { deferred: values.deferred === true },
       );
     case 'status':
       return showStatus(runtime, need('session id', first));
     case 'generate':
       return generateDocument(runtime, need('session id', first), {
-        target: need('--target', values['target'] as string | undefined),
-        out: values['out'] as string | undefined,
+        target: need('--target', values.target as string | undefined),
+        out: values.out as string | undefined,
       });
     default:
       throw new Error(`Unknown command "${command}". See --help.`);

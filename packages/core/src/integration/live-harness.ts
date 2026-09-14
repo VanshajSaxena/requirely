@@ -91,7 +91,7 @@ export const runnableFor = (dir: string): boolean => LIVE || hasCassettesFor(MOD
  * a file where no test ran, which is exactly the case this exists for.
  */
 export function announceSkip(what: string, dir: string = CASSETTES): void {
-  process.stderr.write(
+  process.stdout.write(
     `\n[${what}] SKIPPED — no cassettes for "${MODEL}" under ${dir}\n` +
       `[${what}] record with: REQUIRELY_LIVE=1 pnpm --filter @requirely/core exec vitest run src/integration/\n\n`,
   );

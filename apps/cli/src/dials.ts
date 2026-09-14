@@ -32,7 +32,7 @@ import {
 export function temperamentFrom(
   values: Record<string, string | boolean | undefined>,
 ): Temperament | undefined {
-  const preset = values['dials'] as string | undefined;
+  const preset = values.dials as string | undefined;
   const overrides: Record<string, number> = {};
 
   for (const dial of DIAL_NAMES) {

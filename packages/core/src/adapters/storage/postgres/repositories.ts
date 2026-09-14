@@ -141,21 +141,21 @@ const text_ = (value: unknown): string | undefined =>
 function uniqueViolation(error: unknown): UniqueViolation | null {
   for (let current = error, depth = 0; current != null && depth < 5; depth += 1) {
     const it = current as Record<string, unknown>;
-    if (it['code'] === UNIQUE_VIOLATION) {
+    if (it.code === UNIQUE_VIOLATION) {
       return {
         // `constraint` on PGlite and node-postgres, `constraint_name` on
         // postgres-js. Tests run on the first and production on the second, so
         // reading only one would pass CI and report `null` in production — the
         // precise divergence this adapter's two-driver setup invites. Measured,
         // not assumed: PGlite reports `constraint: 'sessions_pkey'`.
-        constraint: text_(it['constraint']) ?? text_(it['constraint_name']),
+        constraint: text_(it.constraint) ?? text_(it.constraint_name),
         // The driver's own sentence, and it is better than anything constructed
         // here: "Key (id)=(ses-1) already exists." names the column and the
         // value, which a generic message cannot.
-        detail: text_(it['detail']),
+        detail: text_(it.detail),
       };
     }
-    current = it['cause'];
+    current = it.cause;
   }
   return null;
 }

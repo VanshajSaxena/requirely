@@ -30,7 +30,7 @@ try {
 }
 
 const FALLBACK_URL = 'postgres://requirely:requirely@localhost:5432/requirely';
-const url = process.env['DATABASE_URL'];
+const url = process.env.DATABASE_URL;
 
 if (url === undefined) {
   // Announced rather than silent. This is the exact path that migrated the wrong

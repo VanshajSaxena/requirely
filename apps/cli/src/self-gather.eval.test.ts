@@ -61,7 +61,7 @@ const SRS_OUT = join(REPO, 'docs/self-gathered-srs.md');
 const RUNNABLE = LIVE || existsSync(CASSETTES);
 
 if (!RUNNABLE) {
-  process.stderr.write(
+  process.stdout.write(
     `\n[self-gather] SKIPPED — no cassettes under ${CASSETTES}\n` +
       '[self-gather] run with: REQUIRELY_LIVE=1 pnpm --filter @requirely/cli exec vitest run src/self-gather.eval.test.ts\n\n',
   );

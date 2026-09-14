@@ -63,17 +63,13 @@ export function measureJsonSchema(json: unknown): SchemaBudget {
     if (node === null || typeof node !== 'object') return;
     const record = node as Record<string, unknown>;
 
-    const properties = record['properties'];
-    if (record['type'] === 'object' && properties !== null && typeof properties === 'object') {
-      const required = new Set(Array.isArray(record['required']) ? record['required'] : []);
+    const properties = record.properties;
+    if (record.type === 'object' && properties !== null && typeof properties === 'object') {
+      const required = new Set(Array.isArray(record.required) ? record.required : []);
       optional += Object.keys(properties).filter((key) => !required.has(key)).length;
     }
 
-    if (
-      Array.isArray(record['anyOf']) ||
-      Array.isArray(record['oneOf']) ||
-      Array.isArray(record['type'])
-    ) {
+    if (Array.isArray(record.anyOf) || Array.isArray(record.oneOf) || Array.isArray(record.type)) {
       union += 1;
     }
 

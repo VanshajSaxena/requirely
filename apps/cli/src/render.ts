@@ -36,7 +36,7 @@ const BOLD = `${ESC}1m`;
 const RESET = `${ESC}0m`;
 
 /** Colour is a courtesy, not a channel. Off when stdout is not a terminal, and `NO_COLOR` wins. */
-const colour = process.stdout.isTTY === true && process.env['NO_COLOR'] === undefined;
+const colour = process.stdout.isTTY === true && process.env.NO_COLOR === undefined;
 const dim = (text: string): string => (colour ? `${DIM}${text}${RESET}` : text);
 const bold = (text: string): string => (colour ? `${BOLD}${text}${RESET}` : text);
 

@@ -208,6 +208,14 @@ Both are greps over source text, which is why the third script below is separate
 than a rule inside them: its two rules are properties of the *install topology* and of
 *Node's parser*, and neither is expressible as a pattern.
 
+**`complexity/useLiteralKeys` is promoted from the preset's `info` to `error`**, and
+the reason is the output rather than the rule. At `info` it reached 45 occurrences —
+421 of `pnpm verify`'s 473 lines, each a bordered block with a code frame — and the
+run stayed green, because `--error-on-warnings` does not catch infos. It grew
+unnoticed by people reading that output daily. The reasoning lives here because
+`biome.json` cannot hold a comment: one `//` takes the run from 174 files checked to
+368 with ~20k errors, silently (see TRAPS.md).
+
 `pnpm lint` runs `biome check --error-on-warnings`. Without the flag Biome exits 0 on
 warnings, and it was doing exactly that: `pnpm verify` was green while two
 `noUnusedImports` warnings sat in `src/integration/`. A gate that reports findings and
