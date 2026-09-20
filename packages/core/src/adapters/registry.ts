@@ -1,5 +1,6 @@
 import type { ReasoningProvider, TranscriptionProvider } from '../config/env.ts';
 import type { StructuredGenerator, Transcriber } from '../domain/index.ts';
+import type { Logger } from '../observability/logger.ts';
 import { anthropicStructuredGenerator } from './ai/anthropic.ts';
 import { deepseekStructuredGenerator } from './ai/deepseek.ts';
 import { fakeStructuredGenerator } from './ai/fake.ts';
@@ -35,6 +36,14 @@ import { openaiTranscriber } from './transcription/openai.ts';
 export interface ProviderCredentials {
   readonly apiKey: string;
   readonly model: string;
+  /**
+   * Optional, and the app's to supply — core never attaches one itself.
+   *
+   * Same contract `withValidationRetry` already uses: a library that logs
+   * unbidden corrupts its host's stdout, so silence is the default and the CLI
+   * decides. This is what carries the per-call method choice to `--verbose`.
+   */
+  readonly logger?: Logger | undefined;
 }
 
 /**

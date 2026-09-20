@@ -161,7 +161,15 @@ export async function analyzeAndAssess(
   });
 }
 
-const QuestionDrafts = z.object({ questions: z.array(QuestionDraftSchema) });
+/**
+ * Exported so `adapters/ai/caps.test.ts` can measure it.
+ *
+ * That test checks every operation's emitted schema against every provider's
+ * caps, and it can only do that if it can reach the schemas. A private const
+ * here is exactly how `generate-questions` sat at six optional properties
+ * without anyone noticing it was unusable on OpenAI.
+ */
+export const QuestionDrafts = z.object({ questions: z.array(QuestionDraftSchema) });
 
 /**
  * A minimal, valid assessment, for the merged operation's prompted rendering.

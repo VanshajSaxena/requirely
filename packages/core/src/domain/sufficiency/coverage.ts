@@ -46,7 +46,20 @@ export type CoverageAssessment = z.infer<typeof CoverageAssessment>;
  */
 export const UnderstandingAssessment = z.object({
   coverage: z.array(CoverageAssessment),
-  blockingItemIds: z.array(OpenItemId).default([]),
+  /**
+   * Required, not defaulted, and the reason is a provider constraint.
+   *
+   * A `.default([])` makes the field *optional* in the emitted JSON Schema — it
+   * lands in `properties` but not in `required` — and OpenAI's strict mode
+   * rejects exactly that, taking `assess` and `analyze-and-assess` down with it.
+   * Requiring it drops both to zero optional properties, so they keep
+   * constrained decoding on every provider rather than degrading.
+   *
+   * It is also the more honest shape: the prompt already tells the model to list
+   * the blocking ids, so an always-present array is what is being asked for. An
+   * omission now fails at the boundary instead of silently becoming `[]`.
+   */
+  blockingItemIds: z.array(OpenItemId),
   summary: z.string().min(1),
 });
 export type UnderstandingAssessment = z.infer<typeof UnderstandingAssessment>;

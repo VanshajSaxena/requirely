@@ -62,7 +62,7 @@ Global flags
                    smoke tests and CI — it makes no choices worth trusting.
   --deferred       revisit the questions you skipped, instead of the open ones.
   --memory         keep everything in memory (forgets it when the process exits)
-  --verbose        record adapter logs
+  --verbose        show what each model call chose and why, on stderr
 `.trim();
 
 const OPTIONS = {

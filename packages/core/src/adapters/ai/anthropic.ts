@@ -1,5 +1,6 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import type { GenerationMethod, StructuredGenerator } from '../../domain/index.ts';
+import type { Logger } from '../../observability/logger.ts';
 import { type GrammarCaps, methodFor } from './method.ts';
 import { vercelStructuredGenerator } from './vercel.ts';
 
@@ -76,7 +77,7 @@ import { vercelStructuredGenerator } from './vercel.ts';
  * deliberation that made it high-effort in the first place. `chooseMethod` reads
  * that and prefers `prompted` in exactly that case.
  */
-const ANTHROPIC_CAPS: GrammarCaps = {
+export const ANTHROPIC_CAPS: GrammarCaps = {
   supportsConstrained: true,
   optional: 24,
   union: 16,
@@ -97,6 +98,7 @@ const OPTIONS_FOR: Record<GenerationMethod, Record<string, Record<string, unknow
 export interface AnthropicConfig {
   readonly apiKey: string;
   readonly model: string;
+  readonly logger?: Logger | undefined;
 }
 
 export function anthropicStructuredGenerator(config: AnthropicConfig): StructuredGenerator {
@@ -106,6 +108,7 @@ export function anthropicStructuredGenerator(config: AnthropicConfig): Structure
     provider: 'anthropic',
     model: anthropic(config.model),
     modelId: config.model,
+    ...(config.logger === undefined ? {} : { logger: config.logger }),
     methodFor: (schema, effort) => methodFor(schema, ANTHROPIC_CAPS, effort === 'high'),
     optionsFor: (method) => OPTIONS_FOR[method],
   });

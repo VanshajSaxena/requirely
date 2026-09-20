@@ -1,5 +1,6 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { StructuredGenerator } from '../../domain/index.ts';
+import type { Logger } from '../../observability/logger.ts';
 import { type GrammarCaps, methodFor } from './method.ts';
 import { vercelStructuredGenerator } from './vercel.ts';
 
@@ -31,7 +32,7 @@ import { vercelStructuredGenerator } from './vercel.ts';
  * Tool mode does not forbid thinking, so unlike Anthropic there is no case where
  * `prompted` beats `tool`.
  */
-const GEMINI_CAPS: GrammarCaps = {
+export const GEMINI_CAPS: GrammarCaps = {
   supportsConstrained: true,
   optional: 20,
   union: 12,
@@ -41,6 +42,7 @@ const GEMINI_CAPS: GrammarCaps = {
 export interface GoogleConfig {
   readonly apiKey: string;
   readonly model: string;
+  readonly logger?: Logger | undefined;
 }
 
 export function googleStructuredGenerator(config: GoogleConfig): StructuredGenerator {
@@ -50,6 +52,7 @@ export function googleStructuredGenerator(config: GoogleConfig): StructuredGener
     provider: 'google',
     model: google(config.model),
     modelId: config.model,
+    ...(config.logger === undefined ? {} : { logger: config.logger }),
     methodFor: (schema, effort) => methodFor(schema, GEMINI_CAPS, effort === 'high'),
     optionsFor: (method) =>
       method === 'prompted'

@@ -1,5 +1,6 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import type { StructuredGenerator } from '../../domain/index.ts';
+import type { Logger } from '../../observability/logger.ts';
 import { type GrammarCaps, methodFor } from './method.ts';
 import { vercelStructuredGenerator } from './vercel.ts';
 
@@ -38,9 +39,28 @@ import { vercelStructuredGenerator } from './vercel.ts';
  * because OpenAI's compiler is documented as accepting less, so an error here
  * degrades to `tool` early rather than 400ing late. Re-measure before trusting.
  */
-const OPENAI_CAPS: GrammarCaps = {
+export const OPENAI_CAPS: GrammarCaps = {
   supportsConstrained: true,
-  optional: 20,
+  /**
+   * **Zero, and it is a literal budget rather than a sentinel.**
+   *
+   * OpenAI's strict structured outputs require `required` to list *every* key in
+   * `properties`. That is categorical, not a branchiness allowance, so a single
+   * optional property is rejected outright:
+   *
+   * > Invalid schema for response_format 'response': 'required' is required to
+   * > be supplied and to be an array including every key in properties.
+   *
+   * It read `20` — a number borrowed from Anthropic's branchiness model, which
+   * does not apply here — and that is what stopped `chooseMethod` from ever
+   * stepping down. Note the contrast with DeepSeek's `supportsConstrained:
+   * false`: there the numbers were unreachable and needed a named flag to say
+   * "never". Here the number says exactly what it means.
+   *
+   * Measured, not inferred: Anthropic and Google both accept the same
+   * 1-optional schema in constrained mode and return valid output.
+   */
+  optional: 0,
   union: 12,
   toolModeForbidsThinking: false,
 };
@@ -48,6 +68,7 @@ const OPENAI_CAPS: GrammarCaps = {
 export interface OpenAIConfig {
   readonly apiKey: string;
   readonly model: string;
+  readonly logger?: Logger | undefined;
 }
 
 export function openaiStructuredGenerator(config: OpenAIConfig): StructuredGenerator {
@@ -57,10 +78,17 @@ export function openaiStructuredGenerator(config: OpenAIConfig): StructuredGener
     provider: 'openai',
     model: openai(config.model),
     modelId: config.model,
+    ...(config.logger === undefined ? {} : { logger: config.logger }),
     methodFor: (schema, effort) => methodFor(schema, OPENAI_CAPS, effort === 'high'),
+    // `strictJsonSchema`, and the name is the whole fix. This read
+    // `structuredOutputs`, which does not exist in `@ai-sdk/openai` — and the SDK
+    // drops an unrecognised providerOption silently, so the `tool` rung sent a
+    // request byte-identical to `constrained` and the ladder had no middle step
+    // at all. Proved both directions: forcing `tool` reproduced the same 400,
+    // and `strictJsonSchema: false` made the identical call succeed.
     optionsFor: (method) =>
       method === 'prompted'
         ? undefined
-        : { openai: { structuredOutputs: method === 'constrained' } },
+        : { openai: { strictJsonSchema: method === 'constrained' } },
   });
 }

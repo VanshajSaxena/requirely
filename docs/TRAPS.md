@@ -62,6 +62,24 @@ them, which is where you *will* hit them. This is the version you read on purpos
   the first balanced `{…}`, which is `{curly}` in the sentence "use {curly}
   braces". Candidates must actually parse, and the longest parsing one wins —
   prose can contain `{}`, which parses fine and is never the answer.
+- **An unrecognised `providerOptions` key is dropped silently by the AI SDK.**
+  `adapters/ai/openai.ts` passed `{ openai: { structuredOutputs: … } }` for months.
+  That key does not exist in `@ai-sdk/openai` — the real one is
+  `strictJsonSchema` — and nothing warned, so the `tool` rung of the generation
+  ladder sent a request byte-identical to `constrained` and the ladder had no
+  middle step at all on that provider. **No static check can see this**: the
+  option is a `Record<string, unknown>` by design, so a typo and a valid key are
+  indistinguishable until a live call behaves the same in two modes that should
+  differ. Verify a provider option by observing two modes diverge, not by reading
+  the call site.
+- **OpenAI strict structured outputs permit *zero* optional properties.**
+  `required` must list every key in `properties` — categorical, not a
+  branchiness budget like Anthropic's 24. A single `.default()` on a Zod field
+  makes it optional in the emitted schema and the request 400s with
+  *"Missing 'blockingItemIds'"*. Anthropic and Google both accept the same
+  schema, so this surfaces only when someone switches provider. Any per-provider
+  cap table needs a row that can say "none", and `0` is that row — not a
+  sentinel, the literal budget.
 - **A catch-all `translate()` can eat your own errors.** The vercel adapter wraps
   everything thrown inside `generate` so no vendor type escapes — including the
   `CapabilityError` its own prompted path throws, whose `retryable: true` was

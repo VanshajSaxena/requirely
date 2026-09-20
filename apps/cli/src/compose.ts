@@ -23,7 +23,6 @@ import {
   loadEnvFile,
   postgresStores,
   REASONING_ADAPTERS,
-  recordingLogger,
   STRATEGIES,
   silentLogger,
   systemClock,
@@ -54,6 +53,8 @@ import {
  * - **Lifetime.** A CLI command is a process. `close()` exists so a Postgres
  *   pool does not keep it alive after the work is done.
  */
+
+import { streamingLogger } from './logging.ts';
 
 /** `.env` lives at the repo root, three directories up from `apps/cli/src`. */
 const REPO_ENV = join(import.meta.dirname, '../../../.env');
@@ -128,7 +129,9 @@ export async function createCliRuntime(options: RuntimeOptions = {}): Promise<Cl
     ...(options.model === undefined ? {} : { REQUIRELY_REASONING_MODEL: options.model }),
   };
   const config = loadConfig(env);
-  const logger = options.verbose === true ? recordingLogger() : silentLogger;
+  // Streaming, not recording. `recordingLogger()` filled an array this app
+  // never read, so `--verbose` was inert for as long as it has existed.
+  const logger = options.verbose === true ? streamingLogger() : silentLogger;
 
   // `credentialFor`, not a ternary. The version here was
   //   `provider === 'openai' ? credentials.openai : credentials.anthropic`
@@ -148,6 +151,10 @@ export async function createCliRuntime(options: RuntimeOptions = {}): Promise<Cl
       ? REASONING_ADAPTERS[config.reasoning.provider]({
           apiKey: credential ?? 'unused-by-this-provider',
           model: config.reasoning.model,
+          // Which method each call chose, and why. `withValidationRetry` below
+          // already had a logger; the adapter did not, so nothing reported the
+          // one decision that explains a provider rejecting a schema.
+          logger,
         })
       : await scriptedGenerator(options.script),
     { logger },

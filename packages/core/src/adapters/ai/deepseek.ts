@@ -1,5 +1,6 @@
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import type { StructuredGenerator } from '../../domain/index.ts';
+import type { Logger } from '../../observability/logger.ts';
 import { type GrammarCaps, methodFor } from './method.ts';
 import { vercelStructuredGenerator } from './vercel.ts';
 
@@ -35,7 +36,7 @@ import { vercelStructuredGenerator } from './vercel.ts';
  * day DeepSeek ships strict schemas is a one-line change with the numbers already
  * beside it.
  */
-const DEEPSEEK_CAPS: GrammarCaps = {
+export const DEEPSEEK_CAPS: GrammarCaps = {
   supportsConstrained: false,
   optional: 20,
   union: 12,
@@ -45,6 +46,7 @@ const DEEPSEEK_CAPS: GrammarCaps = {
 export interface DeepSeekConfig {
   readonly apiKey: string;
   readonly model: string;
+  readonly logger?: Logger | undefined;
 }
 
 export function deepseekStructuredGenerator(config: DeepSeekConfig): StructuredGenerator {
@@ -54,6 +56,7 @@ export function deepseekStructuredGenerator(config: DeepSeekConfig): StructuredG
     provider: 'deepseek',
     model: deepseek(config.model),
     modelId: config.model,
+    ...(config.logger === undefined ? {} : { logger: config.logger }),
     methodFor: (schema, effort) => methodFor(schema, DEEPSEEK_CAPS, effort === 'high'),
     // Nothing vendor-specific to send. `constrained` is unreachable above, and
     // the other two need no provider option — which is what a port looks like

@@ -9,6 +9,7 @@ import {
   type StructuredGenerator,
   Usage,
 } from '../../domain/index.ts';
+import { type Logger, silentLogger } from '../../observability/logger.ts';
 import type { MethodChoice } from './method.ts';
 import { costMinorUnitsFor } from './pricing.ts';
 import { repairToValid } from './repair.ts';
@@ -104,6 +105,16 @@ export interface VercelAdapterConfig {
   readonly optionsFor?:
     | ((method: GenerationMethod) => Record<string, Record<string, unknown>> | undefined)
     | undefined;
+  /**
+   * Where the method choice gets reported. Defaults to silence.
+   *
+   * `chooseMethod` has always returned a `reason` and nothing has ever printed
+   * it, so which mode a call used — and why — was unobservable from outside. That
+   * is the line that would have explained the OpenAI failure at a glance instead
+   * of after a schema measurement: `assess` was silently going out `constrained`
+   * to a provider that cannot take it.
+   */
+  readonly logger?: Logger | undefined;
 }
 
 export function vercelStructuredGenerator(config: VercelAdapterConfig): StructuredGenerator {
@@ -115,6 +126,16 @@ export function vercelStructuredGenerator(config: VercelAdapterConfig): Structur
         effort,
       );
       const method = choice?.method ?? 'constrained';
+
+      // `debug`, not `info`: one line per model call is noise unless you asked
+      // for it, and `--verbose` is how you ask.
+      (config.logger ?? silentLogger).debug('generation method chosen', {
+        operation: elicitation.operation,
+        provider: config.provider,
+        model: config.modelId,
+        method,
+        reason: choice?.reason ?? 'no methodFor hook; defaulting to constrained',
+      });
 
       try {
         return method === 'prompted'
