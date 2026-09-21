@@ -35,6 +35,11 @@ starts here and migrates inward.
   is the seam the rest of the codebase is organised along.
 - **`render.ts` is pure.** Output is testable without capturing stdout, and the
   wording is not trapped inside argument parsing.
+- **`status.ts` / `observe.ts` / `runlog.ts` are the diagnostic channel**, and
+  all three write to **stderr**. `observe.ts` turns core's `CallEvent`s into a
+  live phase line, a permanent timeline and a JSONL run log; `compose.ts` fans
+  one stream out to all three. Core emits facts with no timestamps — the sink
+  stamps arrival — so the renderers are driven from literals in tests.
 
 ## Load-bearing details
 
@@ -58,6 +63,19 @@ starts here and migrates inward.
 - **Connection failures are translated here**, with the password redacted. Core
   is right not to guess at a remedy; it does not know a `docker-compose.yml`
   exists.
+- **`redact` and `redactSecrets` are two functions that read alike and behave
+  oppositely.** `redact(url)` parses its whole argument as a URL and returns
+  `(unparseable DATABASE_URL)` for anything that is not one — right for the
+  connection-failure message, catastrophic for a log line, where it would
+  replace every record with that string. `redactSecrets(text)` blanks an
+  embedded credential inside a larger body and leaves the rest alone.
+- **`main.ts` clears the status line before its single stdout write**, and
+  `close()` clears it again. A frame redrawing on a 100 ms timer will otherwise
+  land across the command's output or be left half-drawn at exit.
+- **The status line is not the same as a quiet one.** Non-interactive selects a
+  one-line-per-phase *fallback*; `silentStatusLine` says nothing. `--quiet`
+  wants the second, and wiring it to the first is a bug that printed a phase
+  line per step into the test suite.
 
 ## Boundaries
 

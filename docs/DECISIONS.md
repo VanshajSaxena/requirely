@@ -659,6 +659,65 @@ written down for veto — is unmeasured. One sample, one model, one fixture.
   shared cache prefix. Pinned by a test, because the failure mode is a bill
   rather than an error.
 
+---
+
+## Observability: a second port, and the sink owns the clock (Phase 11)
+
+Requirely could say *which* generation method a call chose. It could not say
+what was sent, what came back, or that anything was happening at all — a turn
+printed nothing for minutes, because `main.ts` collects each command's output
+into a `string[]` and writes it once at the end.
+
+**A second port rather than more `Logger` fields.** `Logger` takes a message and
+a bag of fields and returns `void`. A live status line needs to know when a call
+*begins* and when it *ends*, and the only way to recover that from a logger is to
+match on message text — which turns `'generation method chosen'` into an API that
+no test guards and a reword silently breaks. `CallObserver` carries paired
+`call.start` / `call.end` / `call.fail` events with a correlation id, and the two
+ports coexist because they answer different questions: *what did the code decide*
+versus *what is the provider doing right now*.
+
+**Events carry no timestamp, and that is the load-bearing part.** There is no
+`at` and no `elapsedMs` on a `CallEvent`; the sink stamps arrival and subtracts.
+Two things fall out. `Date.now()` stays out of core entirely — the determinism
+rule bans it in `domain/`, `engine/` and `wire/`, so a timestamp minted there
+would have meant threading the `Clock` port through a diagnostic. And every event
+becomes pure data, so `observe.test.ts` drives the renderers from literals with
+no clock to freeze.
+
+**Only provider calls.** Not an event bus. The migration, the commit transaction
+and document rendering are call sites the *app* owns, and an app needs no event
+to talk to itself — `turn.ts` calls `status.begin('Saving turn')` directly.
+Keeping the port to the one thing an app genuinely cannot see inside is what
+stops it growing. `transcribe` was already an `Operation`, so audio ingestion
+became a call like any other rather than a second concept.
+
+**The emit points are in `vercel.ts`, not in a fourth decorator.** All four
+providers delegate to `vercelStructuredGenerator`, so one file covers every one
+of them — and it is the only layer that knows the method, the provider options,
+the rendered JSON Schema, and the `finishReason` / `warnings` /
+`providerMetadata` that `generateObject` returns and the adapter had been
+discarding one line after they arrived. Those ride the event rather than widening
+`Generated`, for the reason `generation.ts` already gives about `method`: they are
+telemetry, and pushing them through the engine and the persistence chain to reach
+a renderer would pay a schema cost forever.
+
+**Capture is unconditional, and the directory is lazy.** The interesting failure
+is the one you did not expect, and reproducing it costs a live turn. But creating
+the directory eagerly left an empty one behind for every command that never
+called a provider — measured at 11 from a single `pnpm verify` — and those
+empties then evicted the real runs from the prune cap. Creating on the first
+event fixes both, and gives `--script` runs the honest outcome: no provider call,
+no trace.
+
+**`--quiet` is not the same as "not a terminal", and conflating them was a bug.**
+The first version set `interactive: false`, which selects the *fallback* — one
+plain line per phase — so the flag meaning "say nothing" printed a line for every
+phase into the test suite's output. They are separate questions: one is about
+whether a cursor can move, the other about whether to speak at all.
+`silentStatusLine` is the null object, beside `silentLogger` and
+`silentObserver`.
+
 ## Deliberate limitations
 
 Things Requirely does not do, on purpose. **Each of these was filed in

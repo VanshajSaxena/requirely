@@ -76,6 +76,15 @@ export { STRATEGIES, type StrategyName } from './engine/strategies.ts';
 export { isAudio, isPlainText, mediaTypeFor } from './ingestion/media-type.ts';
 export { createIngestionService, IngestionError } from './ingestion/service.ts';
 export { ingestText } from './ingestion/text.ts';
+export {
+  type CallEvent,
+  type CallId,
+  type CallObserver,
+  type CallRequest,
+  type CallResponse,
+  recordingObserver,
+  silentObserver,
+} from './observability/calls.ts';
 export { type Logger, recordingLogger, silentLogger } from './observability/logger.ts';
 export {
   formatMetrics,

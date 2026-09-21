@@ -1,5 +1,6 @@
 import type { ReasoningProvider, TranscriptionProvider } from '../config/env.ts';
 import type { StructuredGenerator, Transcriber } from '../domain/index.ts';
+import type { CallObserver } from '../observability/calls.ts';
 import type { Logger } from '../observability/logger.ts';
 import { anthropicStructuredGenerator } from './ai/anthropic.ts';
 import { deepseekStructuredGenerator } from './ai/deepseek.ts';
@@ -44,6 +45,11 @@ export interface ProviderCredentials {
    * decides. This is what carries the per-call method choice to `--verbose`.
    */
   readonly logger?: Logger | undefined;
+  /**
+   * Where each call is reported as it happens. Same contract as `logger`:
+   * optional, the app's to supply, silent by default.
+   */
+  readonly observer?: CallObserver | undefined;
 }
 
 /**

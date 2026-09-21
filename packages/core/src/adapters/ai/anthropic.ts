@@ -1,5 +1,6 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import type { GenerationMethod, StructuredGenerator } from '../../domain/index.ts';
+import type { CallObserver } from '../../observability/calls.ts';
 import type { Logger } from '../../observability/logger.ts';
 import { type GrammarCaps, methodFor } from './method.ts';
 import { vercelStructuredGenerator } from './vercel.ts';
@@ -99,6 +100,7 @@ export interface AnthropicConfig {
   readonly apiKey: string;
   readonly model: string;
   readonly logger?: Logger | undefined;
+  readonly observer?: CallObserver | undefined;
 }
 
 export function anthropicStructuredGenerator(config: AnthropicConfig): StructuredGenerator {
@@ -109,6 +111,7 @@ export function anthropicStructuredGenerator(config: AnthropicConfig): Structure
     model: anthropic(config.model),
     modelId: config.model,
     ...(config.logger === undefined ? {} : { logger: config.logger }),
+    ...(config.observer === undefined ? {} : { observer: config.observer }),
     methodFor: (schema, effort) => methodFor(schema, ANTHROPIC_CAPS, effort === 'high'),
     optionsFor: (method) => OPTIONS_FOR[method],
   });

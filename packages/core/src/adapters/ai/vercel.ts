@@ -9,6 +9,12 @@ import {
   type StructuredGenerator,
   Usage,
 } from '../../domain/index.ts';
+import {
+  type CallObserver,
+  type CallRequest,
+  type CallResponse,
+  silentObserver,
+} from '../../observability/calls.ts';
 import { type Logger, silentLogger } from '../../observability/logger.ts';
 import type { MethodChoice } from './method.ts';
 import { costMinorUnitsFor } from './pricing.ts';
@@ -115,9 +121,40 @@ export interface VercelAdapterConfig {
    * to a provider that cannot take it.
    */
   readonly logger?: Logger | undefined;
+  /**
+   * Where each call is reported as it happens. Defaults to silence.
+   *
+   * Separate from `logger` because a live status line needs paired start/end
+   * events with a correlation id, and reconstructing those by matching on log
+   * message text makes the message an API that nothing guards.
+   */
+  readonly observer?: CallObserver | undefined;
+}
+
+/**
+ * One provider attempt, plus the telemetry that does not belong on `Generated`.
+ *
+ * `finishReason`, `warnings` and `providerMetadata` are per-call facts about
+ * *how the provider behaved*, not about the value. Widening `Generated` to
+ * carry them would push them through the engine, the strategies and the
+ * persistence chain to reach a renderer — and `generation.ts` already records
+ * that even `method` is telemetry the engine must never read. They ride the
+ * event instead.
+ */
+interface Attempt<T> {
+  readonly generated: Generated<T>;
+  readonly finishReason: string | null;
+  readonly warnings: readonly string[];
+  readonly providerMetadata: Record<string, unknown> | null;
 }
 
 export function vercelStructuredGenerator(config: VercelAdapterConfig): StructuredGenerator {
+  const observer = config.observer ?? silentObserver;
+  // A counter rather than a UUID: `adapters/` is outside the determinism rule,
+  // ids need only be unique within one generator's lifetime, and a reader
+  // matching `call-2` to its end event should not have to compare hex.
+  let calls = 0;
+
   return {
     async generate<T>(elicitation: Elicitation<T>): Promise<Generated<T>> {
       const effort = elicitation.effort ?? 'medium';
@@ -126,6 +163,7 @@ export function vercelStructuredGenerator(config: VercelAdapterConfig): Structur
         effort,
       );
       const method = choice?.method ?? 'constrained';
+      const options = config.optionsFor?.(method);
 
       // `debug`, not `info`: one line per model call is noise unless you asked
       // for it, and `--verbose` is how you ask.
@@ -137,15 +175,98 @@ export function vercelStructuredGenerator(config: VercelAdapterConfig): Structur
         reason: choice?.reason ?? 'no methodFor hook; defaulting to constrained',
       });
 
+      calls += 1;
+      const callId = `call-${calls}`;
+      observer.observe({
+        kind: 'call.start',
+        callId,
+        request: requestOf(config, elicitation, effort, method, options),
+      });
+
       try {
-        return method === 'prompted'
-          ? await viaPrompt(config, elicitation, effort)
-          : await viaObject(config, elicitation, effort, method);
+        const attempt =
+          method === 'prompted'
+            ? await viaPrompt(config, elicitation, effort)
+            : await viaObject(config, elicitation, effort, method, options);
+
+        observer.observe({ kind: 'call.end', callId, response: responseOf(attempt) });
+        return attempt.generated;
       } catch (error) {
-        throw translate(error, config.provider, elicitation, config.modelId);
+        // Translate first, then report. `translate` is what decides whether this
+        // was retryable and salvages the usage the provider billed for a failed
+        // attempt — reporting the raw vendor error would lose both.
+        const failure = translate(error, config.provider, elicitation, config.modelId);
+        observer.observe({
+          kind: 'call.fail',
+          callId,
+          retryable: failure.retryable,
+          reason: failure.message,
+          usage: failure.usage,
+        });
+        throw failure;
       }
     },
   };
+}
+
+function requestOf<T>(
+  config: VercelAdapterConfig,
+  elicitation: Elicitation<T>,
+  effort: Effort,
+  method: GenerationMethod,
+  options: Record<string, Record<string, unknown>> | undefined,
+): CallRequest {
+  return {
+    operation: elicitation.operation,
+    provider: config.provider,
+    model: config.modelId,
+    method,
+    effort,
+    maxOutputTokens: elicitation.maxOutputTokens ?? null,
+    instructions: elicitation.instructions,
+    input: elicitation.input,
+    // The same conversion `@ai-sdk/provider-utils` performs, and deliberately
+    // not the bytes on the wire — the SDK wraps this in
+    // `addAdditionalPropertiesToJsonSchema` afterwards. `CallRequest.schema`
+    // documents the difference; do not quietly relabel this as the request.
+    schema: z.toJSONSchema(elicitation.schema as z.ZodType<unknown>, { io: 'input' }),
+    providerOptions: options ?? {},
+  };
+}
+
+function responseOf<T>(attempt: Attempt<T>): CallResponse {
+  return {
+    value: attempt.generated.value,
+    raw: attempt.generated.raw,
+    usage: attempt.generated.usage,
+    repairs: attempt.generated.repairs,
+    finishReason: attempt.finishReason,
+    warnings: attempt.warnings,
+    providerMetadata: attempt.providerMetadata,
+  };
+}
+
+/**
+ * Provider warnings as plain strings.
+ *
+ * The SDK's `CallWarning` is a discriminated union with a vendor-shaped
+ * `setting` field, and boundary rule 13 forbids `apps/cli` from importing any
+ * `ai` type — so a warning has to cross as something core owns. Flattened here,
+ * at the only layer allowed to see the original.
+ */
+function warningsOf(warnings: readonly unknown[] | undefined): readonly string[] {
+  return (warnings ?? []).map((warning) => {
+    const detail = warning as { type?: string; message?: string; setting?: string };
+    return (
+      detail.message ??
+      `${detail.type ?? 'warning'}${detail.setting === undefined ? '' : `: ${detail.setting}`}`
+    );
+  });
+}
+
+/** `providerMetadata` is `Record<string, Record<string, JSONValue>>`; widen, don't assert. */
+function metadataOf(metadata: unknown): Record<string, unknown> | null {
+  return metadata === undefined || metadata === null ? null : (metadata as Record<string, unknown>);
 }
 
 /**
@@ -161,11 +282,11 @@ async function viaObject<T>(
   elicitation: Elicitation<T>,
   effort: Effort,
   method: GenerationMethod,
-): Promise<Generated<T>> {
+  options: Record<string, Record<string, unknown>> | undefined,
+): Promise<Attempt<T>> {
   // Spread-or-omit through a `Record<string, never>` cast: under
   // `exactOptionalPropertyTypes` an inline `{ k: v } | {}` spread produces an
   // optional property the SDK's option type will not accept.
-  const options = config.optionsFor?.(method);
   const providerOptions = (options === undefined ? {} : { providerOptions: options }) as Record<
     string,
     never
@@ -189,13 +310,18 @@ async function viaObject<T>(
   });
 
   return {
-    value: result.object as T,
-    usage: usageOf(config, elicitation, result.usage),
-    method,
-    // No raw text to keep: the SDK hands back a parsed object. Re-serializing it
-    // and calling that "raw" would be a lie in the place a reader would trust it.
-    raw: null,
-    repairs: [],
+    generated: {
+      value: result.object as T,
+      usage: usageOf(config, elicitation, result.usage),
+      method,
+      // No raw text to keep: the SDK hands back a parsed object. Re-serializing it
+      // and calling that "raw" would be a lie in the place a reader would trust it.
+      raw: null,
+      repairs: [],
+    },
+    finishReason: result.finishReason,
+    warnings: warningsOf(result.warnings),
+    providerMetadata: metadataOf(result.providerMetadata),
   };
 }
 
@@ -211,7 +337,7 @@ async function viaPrompt<T>(
   config: VercelAdapterConfig,
   elicitation: Elicitation<T>,
   effort: Effort,
-): Promise<Generated<T>> {
+): Promise<Attempt<T>> {
   const ceiling = (
     elicitation.maxOutputTokens === undefined
       ? {}
@@ -249,11 +375,16 @@ async function viaPrompt<T>(
   }
 
   return {
-    value: parsed.data,
-    usage,
-    method: 'prompted',
-    raw: result.text,
-    repairs: repaired.repairs,
+    generated: {
+      value: parsed.data,
+      usage,
+      method: 'prompted',
+      raw: result.text,
+      repairs: repaired.repairs,
+    },
+    finishReason: result.finishReason,
+    warnings: warningsOf(result.warnings),
+    providerMetadata: metadataOf(result.providerMetadata),
   };
 }
 

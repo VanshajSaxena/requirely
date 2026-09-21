@@ -17,3 +17,6 @@ tmp/
 out/
 next-env.d.ts
 *.tsbuildinfo
+
+# Run payloads: full prompts and model output, written on every turn.
+.requirely/

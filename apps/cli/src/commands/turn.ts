@@ -49,7 +49,27 @@ async function runAndCommit(
     describeStatus(commit.session.status),
   ];
 
+  // The one slow step after the model calls, and the one where a failure loses
+  // a turn that has already been paid for. Worth naming while it happens.
+  runtime.status.begin('Saving turn');
   await runtime.committer.commit(commit);
+  runtime.status.clear();
+
+  runtime.runLog?.finish({
+    session: commit.session.id,
+    status: commit.session.status,
+    turn: commit.turn.index,
+    calls: commit.turn.usage.length,
+    usage,
+    verdict: commit.turn.verdict,
+  });
+  // Only when something was actually written. A `--script` run makes no
+  // provider call, so pointing at a directory that does not exist would be
+  // worse than saying nothing.
+  if (runtime.runLog?.recorded === true) {
+    lines.push('', note(`payloads: ${runtime.runLog.path}`));
+  }
+
   return { commit, lines };
 }
 

@@ -62,7 +62,9 @@ Global flags
                    smoke tests and CI — it makes no choices worth trusting.
   --deferred       revisit the questions you skipped, instead of the open ones.
   --memory         keep everything in memory (forgets it when the process exits)
-  --verbose        show what each model call chose and why, on stderr
+  --verbose        show what each model call chose and why, plus a preview of
+                   what was sent and what came back, on stderr
+  --quiet          no live status line and no call timeline; errors only
 `.trim();
 
 const OPTIONS = {
@@ -85,6 +87,7 @@ const OPTIONS = {
   deferred: { type: 'boolean' },
   memory: { type: 'boolean' },
   verbose: { type: 'boolean' },
+  quiet: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 } as const;
 
@@ -191,10 +194,17 @@ async function main(): Promise<number> {
     // forgetting, which a silent in-memory default would not be.
     storage: values.memory === true ? 'memory' : 'postgres',
     verbose: values.verbose,
+    quiet: values.quiet,
+    // The first positional of every command but `new` and `ls` is the session
+    // id, which is what makes a run directory findable later.
+    ...(rest[0] === undefined ? {} : { sessionId: rest[0] }),
   });
 
   try {
     const lines = await dispatch(command, rest, values, runtime);
+    // Before the write, not after: the status line redraws on a timer, and a
+    // frame landing between these two calls would be stamped across the output.
+    runtime.status.clear();
     process.stdout.write(`${lines.join('\n')}\n`);
     return 0;
   } finally {

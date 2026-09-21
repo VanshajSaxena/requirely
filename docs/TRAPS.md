@@ -149,6 +149,22 @@ them, which is where you *will* hit them. This is the version you read on purpos
 - **AI SDK v7 provider-level usage is nested** (`inputTokens: { total, noCache,
   … }`) while the flattened `LanguageModelUsage` on the result is not. A mock
   returning the flat shape yields zeros.
+- **`mkdirSync(path, { recursive: true })` under `/proc` hangs rather than
+  failing.** Reached for as a "surely unwritable" fixture while testing that the
+  run log never throws; the call never returned, and because vitest buffers a
+  file's output until the file finishes, the suite printed the `RUN` banner and
+  nothing else — no test name, no timeout, no clue. Measured directly with
+  `timeout 10 node -e …`, which exited 124.
+
+  Two lessons, and the second is the reusable one. For "this path cannot be
+  created", put a **regular file where a directory must go**: `ENOTDIR`, instant,
+  and portable. And when a vitest file produces *no* output at all, the hang is
+  in a test body, not in collection — bisect with `-t <name>`, because the
+  reporter will not tell you which one.
+- **`vitest run <file>` output is buffered per file.** A passing file prints when
+  it finishes; a file that never finishes prints nothing beyond the banner. It
+  looks exactly like a file that failed to collect, which sends you to look at
+  the imports instead of the tests.
 
 ---
 

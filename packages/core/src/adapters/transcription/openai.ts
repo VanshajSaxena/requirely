@@ -8,6 +8,7 @@ import {
   type TranscriptionResult,
   Usage,
 } from '../../domain/index.ts';
+import { type CallObserver, silentObserver } from '../../observability/calls.ts';
 
 /**
  * Transcription via OpenAI Whisper, through the AI SDK's stable `transcribe()`.
@@ -27,17 +28,79 @@ import {
 export interface OpenAITranscriberConfig {
   readonly apiKey: string;
   readonly model: string;
+  /**
+   * Reported as a call like any other, because it is one.
+   *
+   * `transcribe` is already an `Operation`, so audio ingestion needed no second
+   * concept — and this is the slowest opaque wait in the product. An hour of
+   * audio leaves `requirely add` silent for minutes with nothing to show it is
+   * alive, which is exactly the complaint this port exists to answer.
+   */
+  readonly observer?: CallObserver | undefined;
 }
 
 export function openaiTranscriber(config: OpenAITranscriberConfig): Transcriber {
   const openai = createOpenAI({ apiKey: config.apiKey });
+  const observer = config.observer ?? silentObserver;
+  let calls = 0;
 
   return {
     async transcribe(audio: AudioInput): Promise<TranscriptionResult> {
+      calls += 1;
+      const callId = `transcribe-${calls}`;
+      observer.observe({
+        kind: 'call.start',
+        callId,
+        request: {
+          operation: OPERATION.transcribe,
+          provider: 'openai',
+          model: config.model,
+          // Audio goes as bytes, not as a schema-shaped request. `constrained`
+          // is the nearest honest label: the provider owns the output shape.
+          method: 'constrained',
+          effort: 'medium',
+          maxOutputTokens: null,
+          instructions: '',
+          // The bytes themselves are not printable and would be useless in a
+          // log; their size is the thing that predicts how long this will take.
+          input: `${audio.data.byteLength} bytes of ${audio.mediaType}`,
+          schema: null,
+          providerOptions: {},
+        },
+      });
+
       try {
         const result = await transcribe({
           model: openai.transcription(config.model),
           audio: audio.data,
+        });
+
+        const usage = Usage.parse({
+          operation: OPERATION.transcribe,
+          provider: 'openai',
+          model: config.model,
+          // Transcription is priced by audio duration, not tokens. Reporting
+          // zero would read as free; the duration is on the result above and
+          // a price table can use it when one exists.
+          inputTokens: 0,
+          outputTokens: 0,
+          costMinorUnits: null,
+        });
+
+        observer.observe({
+          kind: 'call.end',
+          callId,
+          response: {
+            value: { characters: result.text.length, language: result.language ?? null },
+            // The transcript is the *value*, not the model's literal reply — the
+            // SDK already parsed a response envelope to get here.
+            raw: null,
+            usage,
+            repairs: [],
+            finishReason: null,
+            warnings: [],
+            providerMetadata: null,
+          },
         });
 
         return {
@@ -58,20 +121,17 @@ export function openaiTranscriber(config: OpenAITranscriberConfig): Transcriber 
                   endMs: Math.round(segment.endSecond * 1000),
                   speakerLabel: null,
                 })),
-          usage: Usage.parse({
-            operation: OPERATION.transcribe,
-            provider: 'openai',
-            model: config.model,
-            // Transcription is priced by audio duration, not tokens. Reporting
-            // zero would read as free; the duration is on the result above and
-            // a price table can use it when one exists.
-            inputTokens: 0,
-            outputTokens: 0,
-            costMinorUnits: null,
-          }),
+          usage,
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        observer.observe({
+          kind: 'call.fail',
+          callId,
+          retryable: false,
+          reason: message,
+          usage: null,
+        });
         throw new CapabilityError(OPERATION.transcribe, 'openai', message, { cause: error });
       }
     },

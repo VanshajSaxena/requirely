@@ -60,4 +60,34 @@ describe('streamingLogger', () => {
       '[error] e',
     ]);
   });
+
+  describe('the LOG_LEVEL floor', () => {
+    const emitAll = (minimum: Parameters<typeof streamingLogger>[1]): string[] => {
+      const lines: string[] = [];
+      const logger = streamingLogger((line) => void lines.push(line), minimum);
+      logger.debug('d');
+      logger.info('i');
+      logger.warn('w');
+      logger.error('e');
+      return lines.map((line) => line.trim());
+    };
+
+    it('drops everything below the floor', () => {
+      // The default: `LOG_LEVEL=info` keeps the retry narrative and hides the
+      // one-line-per-call method choice, which is what `--verbose` is for.
+      expect(emitAll('info')).toEqual(['[info] i', '[warn] w', '[error] e']);
+      expect(emitAll('warn')).toEqual(['[warn] w', '[error] e']);
+    });
+
+    it('keeps everything at debug, which is what --verbose selects', () => {
+      expect(emitAll('debug')).toHaveLength(4);
+    });
+
+    it('silences everything at fatal rather than silencing nothing', () => {
+      // `fatal` is in the config enum and no `Logger` method emits one. Were it
+      // missing from the level list, `indexOf` would return -1 and every message
+      // would clear a floor of -1 — the setting would read as "log everything".
+      expect(emitAll('fatal')).toEqual([]);
+    });
+  });
 });

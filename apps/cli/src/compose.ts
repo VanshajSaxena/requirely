@@ -10,6 +10,7 @@ import {
 } from '@requirely/core/domain';
 import {
   type AppConfig,
+  type CallObserver,
   createIngestionService,
   createPostgresConnection,
   credentialFor,
@@ -30,6 +31,9 @@ import {
   uuidIdGenerator,
   withValidationRetry,
 } from '@requirely/core/server';
+import { createStatusObserver, createTimeline, fanOut } from './observe.ts';
+import { createRunLog, type RunLog } from './runlog.ts';
+import { createStatusLine, type StatusLine, silentStatusLine } from './status.ts';
 
 /**
  * **The composition root. The only one.**
@@ -60,6 +64,17 @@ import { streamingLogger } from './logging.ts';
 const REPO_ENV = join(import.meta.dirname, '../../../.env');
 
 /**
+ * Where run payloads land.
+ *
+ * Module-relative, like `REPO_ENV` and for the same reason: the CLI is reached
+ * through `bin/requirely` from any directory, and a cwd-relative path would
+ * scatter a `.requirely/` into every one of them. `REQUIRELY_RUN_LOG_DIR`
+ * overrides, for anyone who wants it under `$XDG_STATE_HOME` instead.
+ */
+const RUN_LOG_DIR =
+  process.env.REQUIRELY_RUN_LOG_DIR ?? join(import.meta.dirname, '../../../.requirely/runs');
+
+/**
  * What the commands need from storage.
  *
  * Named here rather than borrowed from an adapter's return type: the CLI depends
@@ -87,6 +102,15 @@ export interface CliRuntime {
   readonly stores: CliStores;
   readonly ingestion: ReturnType<typeof createIngestionService>;
   readonly logger: Logger;
+  /**
+   * The live phase line. Commands drive it directly for the slow work the
+   * `CallObserver` cannot see — the migration, the commit transaction — because
+   * those are call sites this app owns and an app needs no event to talk to
+   * itself.
+   */
+  readonly status: StatusLine;
+  /** Where this run's payloads are being written, or null when capture is off. */
+  readonly runLog: RunLog | null;
   close(): Promise<void>;
 }
 
@@ -104,6 +128,10 @@ export interface RuntimeOptions {
    */
   readonly storage?: 'memory' | 'postgres' | undefined;
   readonly verbose?: boolean | undefined;
+  /** Suppress the live status line and the call timeline. Errors still print. */
+  readonly quiet?: boolean | undefined;
+  /** The session this run belongs to, so the run directory is findable by id. */
+  readonly sessionId?: string | undefined;
   /**
    * Path to a recorded script. When set, the loop is driven from the file
    * instead of from a provider — see `scriptedGenerator`.
@@ -129,9 +157,33 @@ export async function createCliRuntime(options: RuntimeOptions = {}): Promise<Cl
     ...(options.model === undefined ? {} : { REQUIRELY_REASONING_MODEL: options.model }),
   };
   const config = loadConfig(env);
-  // Streaming, not recording. `recordingLogger()` filled an array this app
-  // never read, so `--verbose` was inert for as long as it has existed.
-  const logger = options.verbose === true ? streamingLogger() : silentLogger;
+  const quiet = options.quiet === true;
+  const verbose = options.verbose === true;
+
+  // Streaming, not recording. `recordingLogger()` filled an array this app never
+  // read, so `--verbose` was inert for as long as it has existed.
+  //
+  // Three states, not two. `--quiet` silences; `--verbose` drops the floor to
+  // `debug` so the per-call method choice appears; otherwise `LOG_LEVEL` decides
+  // — which at its `info` default still surfaces a retry recovering, the one
+  // thing worth knowing about without having asked for it.
+  const logger = quiet
+    ? silentLogger
+    : streamingLogger(undefined, verbose ? 'debug' : config.logLevel);
+
+  // Three sinks, fanned out from one stream. Quiet drops the two that draw on
+  // the terminal and keeps the one that writes to disk — and because the run log
+  // creates nothing until an event arrives, a quiet run that calls no provider
+  // still leaves no trace.
+  const status = quiet ? silentStatusLine : createStatusLine();
+  const runLog = createRunLog({
+    dir: RUN_LOG_DIR,
+    ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
+    redact: redactSecrets,
+  });
+  const observer: CallObserver = quiet
+    ? runLog
+    : fanOut(createStatusObserver(status), createTimeline({ payloads: verbose }), runLog);
 
   // `credentialFor`, not a ternary. The version here was
   //   `provider === 'openai' ? credentials.openai : credentials.anthropic`
@@ -155,6 +207,8 @@ export async function createCliRuntime(options: RuntimeOptions = {}): Promise<Cl
           // already had a logger; the adapter did not, so nothing reported the
           // one decision that explains a provider rejecting a schema.
           logger,
+          // What went out and what came back, per call, as it happens.
+          observer,
         })
       : await scriptedGenerator(options.script),
     { logger },
@@ -169,9 +223,18 @@ export async function createCliRuntime(options: RuntimeOptions = {}): Promise<Cl
       : TRANSCRIPTION_ADAPTERS[config.transcription.provider]({
           apiKey: config.credentials.openai ?? 'unused-by-this-provider',
           model: config.transcription.model,
+          // The slowest opaque wait in the product: an hour of audio otherwise
+          // leaves `requirely add` silent with nothing to show it is alive.
+          observer,
         });
 
+  // Framed by the app, not by an event: `connection.migrate()` runs on every
+  // Postgres command and takes hundreds of milliseconds to seconds, and it is
+  // the first thing a user waits on. There is no port to emit from and no need
+  // for one — this is a call site the CLI owns.
+  if (options.storage !== 'memory') status.begin('Connecting to Postgres');
   const { stores, close } = await selectStorage(options.storage ?? 'memory', config);
+  status.clear();
   const clock = systemClock();
 
   return {
@@ -197,7 +260,14 @@ export async function createCliRuntime(options: RuntimeOptions = {}): Promise<Cl
       ...(transcriber === undefined ? {} : { transcriber }),
     }),
     logger,
-    close,
+    status,
+    runLog,
+    close: async (): Promise<void> => {
+      // Before storage, and unconditionally: a status line still animating when
+      // the process exits leaves a half-drawn frame as the last thing on screen.
+      status.clear();
+      await close();
+    },
   };
 }
 
@@ -291,6 +361,26 @@ async function scriptedGenerator(
       { cause: error },
     );
   }
+}
+
+/**
+ * Blank any embedded credential inside a larger body of text.
+ *
+ * **Not `redact`.** That one parses its whole argument as a URL and returns
+ * `(unparseable DATABASE_URL)` for anything that is not one — correct for the
+ * connection-failure message, catastrophic for a log line, where it would
+ * replace every record with that string. Two jobs that read alike and behave
+ * oppositely, which is why they are two named functions rather than one with a
+ * flag.
+ *
+ * A connection error can carry the DSN into a `call.fail` reason, and the run
+ * log is written to disk and likely to be shared. API keys never reach a
+ * `CallEvent` at all — they live on the adapter config — so this is the only
+ * secret shape that can arrive here.
+ */
+function redactSecrets(text: string): string {
+  // scheme://user:secret@host  →  scheme://user:***@host
+  return text.replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]*@/gi, '$1:***@');
 }
 
 /** Never print a connection string with its password in it. */

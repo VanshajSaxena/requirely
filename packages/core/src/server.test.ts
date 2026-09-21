@@ -48,6 +48,8 @@ const REQUIRED = [
   'project',
   'silentLogger',
   'recordingLogger',
+  'silentObserver',
+  'recordingObserver',
   'sessionMetrics',
   'formatMetrics',
 ] as const;

@@ -1,5 +1,6 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { StructuredGenerator } from '../../domain/index.ts';
+import type { CallObserver } from '../../observability/calls.ts';
 import type { Logger } from '../../observability/logger.ts';
 import { type GrammarCaps, methodFor } from './method.ts';
 import { vercelStructuredGenerator } from './vercel.ts';
@@ -43,6 +44,7 @@ export interface GoogleConfig {
   readonly apiKey: string;
   readonly model: string;
   readonly logger?: Logger | undefined;
+  readonly observer?: CallObserver | undefined;
 }
 
 export function googleStructuredGenerator(config: GoogleConfig): StructuredGenerator {
@@ -53,6 +55,7 @@ export function googleStructuredGenerator(config: GoogleConfig): StructuredGener
     model: google(config.model),
     modelId: config.model,
     ...(config.logger === undefined ? {} : { logger: config.logger }),
+    ...(config.observer === undefined ? {} : { observer: config.observer }),
     methodFor: (schema, effort) => methodFor(schema, GEMINI_CAPS, effort === 'high'),
     optionsFor: (method) =>
       method === 'prompted'

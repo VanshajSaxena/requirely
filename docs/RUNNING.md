@@ -96,11 +96,11 @@ Or change provider entirely. `--provider` takes `anthropic`, `openai`, `google`,
 requirely turn <id> --provider google --model gemini-flash-latest
 ```
 
-Two honest caveats. **Prices for anything but Anthropic are not in the table**, so
-those sessions report "cost unknown" rather than a number — a missing figure is
-questioned and a guessed one is believed. And **DeepSeek has no schema-constrained
-decoding**, so it degrades to tool mode automatically; that path works and is less
-guarded than the constrained one.
+Two honest caveats. **Anthropic, OpenAI and Google are priced; DeepSeek is not**,
+so a DeepSeek session reports "cost unknown" rather than a number — a missing
+figure is questioned and a guessed one is believed. And **DeepSeek has no
+schema-constrained decoding**, so it degrades to tool mode automatically; that
+path works and is less guarded than the constrained one.
 
 Every turn prints its own token count and cost, and `Turn` stores `usage`, so
 "what did this session cost" stays answerable from the database afterwards.
@@ -124,6 +124,55 @@ requirely generate "$ID" --target srs   --script apps/cli/fixtures/roomly-settle
 
 `--auto` takes the first option every time. It proves the pipeline and nothing
 about the content — it makes no choice worth trusting.
+
+## 6. Watching a turn, and reading it afterwards
+
+A turn is two or three provider calls and can run for minutes. It narrates
+itself on **stderr**, so everything below stays out of a redirected document.
+
+```
+⠹ Analysing input · 18s                      ← while it runs, redrawn in place
+
+● analyze  openai/gpt-5.6-luna  constrained  ← and then permanently
+  → sent instructions 5.5KB · input 336B · effort high
+  ← 18s  1,487 out  $0.0021
+```
+
+`method` is worth watching. In the run above, `analyze` and `assess` went out
+`constrained` and `generate-questions` stepped down to `tool` — OpenAI permits no
+optional properties under strict decoding, and question drafts have six.
+
+| Flag | Effect |
+| --- | --- |
+| *(none)* | status line, per-call timeline, run log |
+| `--verbose` | adds the method-choice reasoning and a 400-character preview of what was sent and what came back |
+| `--quiet` | errors only. Also what a non-TTY gets for the status line: one plain line per phase, never a redraw |
+
+`LOG_LEVEL` in `.env` sets the floor for the `[level] message` diagnostics;
+`--verbose` overrides it to `debug`.
+
+### The run log
+
+Every turn that calls a provider writes its payloads to
+`.requirely/runs/<timestamp>-<session>/`:
+
+- **`calls.jsonl`** — one JSON object per event. For each call: the full system
+  prompt, the full input, the JSON Schema, the provider options, then the value,
+  usage, timing, `finishReason` and any provider warnings.
+- **`turn.json`** — the verdict and the turn's totals.
+
+The last 20 runs are kept. `REQUIRELY_RUN_LOG_DIR` moves the directory; the
+default is repo-relative, like `.env`, so it does not follow you between working
+directories. `.requirely/` is gitignored.
+
+> **It holds your material.** The prompts, your sources, your answers and the
+> model's output, in full. No API key can reach it — keys live on the adapter
+> config and never enter an event — and an embedded database password is
+> redacted. Everything else is verbatim, so read a run directory before you
+> paste one anywhere.
+
+A `--script` run writes **nothing**: no provider was called, so there is nothing
+to record and no empty directory left behind.
 
 ---
 

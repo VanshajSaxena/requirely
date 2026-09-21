@@ -1,5 +1,6 @@
 import { createDeepSeek } from '@ai-sdk/deepseek';
 import type { StructuredGenerator } from '../../domain/index.ts';
+import type { CallObserver } from '../../observability/calls.ts';
 import type { Logger } from '../../observability/logger.ts';
 import { type GrammarCaps, methodFor } from './method.ts';
 import { vercelStructuredGenerator } from './vercel.ts';
@@ -47,6 +48,7 @@ export interface DeepSeekConfig {
   readonly apiKey: string;
   readonly model: string;
   readonly logger?: Logger | undefined;
+  readonly observer?: CallObserver | undefined;
 }
 
 export function deepseekStructuredGenerator(config: DeepSeekConfig): StructuredGenerator {
@@ -57,6 +59,7 @@ export function deepseekStructuredGenerator(config: DeepSeekConfig): StructuredG
     model: deepseek(config.model),
     modelId: config.model,
     ...(config.logger === undefined ? {} : { logger: config.logger }),
+    ...(config.observer === undefined ? {} : { observer: config.observer }),
     methodFor: (schema, effort) => methodFor(schema, DEEPSEEK_CAPS, effort === 'high'),
     // Nothing vendor-specific to send. `constrained` is unreachable above, and
     // the other two need no provider option — which is what a port looks like

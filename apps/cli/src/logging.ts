@@ -23,10 +23,36 @@ import type { Logger } from '@requirely/core/server';
  * lines in the document. Diagnostics and output are different streams and this
  * is exactly the case that distinction exists for.
  */
-export function streamingLogger(write: (line: string) => void = toStderr): Logger {
+/**
+ * Levels, lowest first. A message is written when its level is at or above the
+ * floor.
+ *
+ * `fatal` is in the config enum and nothing emits one — `Logger` has four
+ * methods. It is listed so that `LOG_LEVEL=fatal` silences everything rather
+ * than falling through to an index of `-1` and silencing nothing.
+ */
+const LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
+export type LogLevel = (typeof LEVELS)[number];
+
+export function streamingLogger(
+  write: (line: string) => void = toStderr,
+  /**
+   * The floor, from `LOG_LEVEL`.
+   *
+   * **This closes a knob that was dead in exactly the way `--verbose` used to
+   * be.** `config/env.ts` declared `LOG_LEVEL`, validated it against a six-value
+   * enum and assigned it to `AppConfig.logLevel` — and a grep for `logLevel`
+   * across the whole repo returned the declaration, the assignment, and no
+   * reader. A validated setting that changes nothing is worse than a missing
+   * one, because it looks like it works.
+   */
+  minimum: LogLevel = 'debug',
+): Logger {
+  const floor = LEVELS.indexOf(minimum);
   const at =
-    (level: string) =>
+    (level: LogLevel) =>
     (message: string, fields: Record<string, unknown> = {}): void => {
+      if (LEVELS.indexOf(level) < floor) return;
       const detail = Object.entries(fields)
         .map(([key, value]) => `${key}=${format(value)}`)
         .join(' ');

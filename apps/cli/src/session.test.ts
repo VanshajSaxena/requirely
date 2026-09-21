@@ -176,7 +176,11 @@ const SCRIPT = {
 };
 
 async function harness(): Promise<CliRuntime> {
-  const runtime = await createCliRuntime({ provider: 'fake', storage: 'memory' });
+  // `quiet`: a test is not a person watching a terminal. Without it the status
+  // line's non-TTY fallback prints a phase line per step into the vitest
+  // output, which is the same "reports and passes anyway" noise that let 45
+  // Biome infos accumulate unnoticed.
+  const runtime = await createCliRuntime({ provider: 'fake', storage: 'memory', quiet: true });
   // The fake built by the registry has no script; swap in one that does. The
   // registry's job is choosing *which* adapter, not configuring it.
   const { fakeStructuredGenerator } = await import('@requirely/core/server');
@@ -228,6 +232,7 @@ describe('the committed fixture', () => {
       provider: 'fake',
       storage: 'memory',
       script: FIXTURE,
+      quiet: true,
     });
     const id = idFrom(await newSession(runtime, { title: 'Roomly' }));
     await addSource(runtime, id, await brief());
@@ -242,7 +247,12 @@ describe('the committed fixture', () => {
 
   it('says which file it could not read', async () => {
     await expect(
-      createCliRuntime({ provider: 'fake', storage: 'memory', script: '/nope/missing.json' }),
+      createCliRuntime({
+        provider: 'fake',
+        storage: 'memory',
+        script: '/nope/missing.json',
+        quiet: true,
+      }),
     ).rejects.toThrow(/Could not read the script at \/nope\/missing.json/);
   });
 });
