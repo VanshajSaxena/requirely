@@ -8,7 +8,7 @@ it chose a `none` transcription provider over a `fake` one. What was missing is 
 way to *supply* the script. That is `--script`.
 
 ```
-requirely turn <id> --script apps/cli/fixtures/roomly.json
+requirely turn <id> --provider fake --script apps/cli/fixtures/roomly.json
 ```
 
 The script is validated against the real domain schemas by the fake generator
@@ -31,11 +31,12 @@ advancing. That is a property of scripting a multi-process CLI, not a defect.
 A full terminal session at zero cost:
 
 ```sh
-ID=$(requirely new --title Roomly --script apps/cli/fixtures/roomly.json | sed -n 's/^Created //p')
-requirely add  "$ID" ./brief.txt      --script apps/cli/fixtures/roomly.json
-requirely turn "$ID"                  --script apps/cli/fixtures/roomly.json
-requirely answer "$ID" --auto         --script apps/cli/fixtures/roomly-settle.json
-requirely generate "$ID" --target srs --script apps/cli/fixtures/roomly-settle.json
+F=apps/cli/fixtures
+ID=$(requirely new --title Roomly --provider fake --script $F/roomly.json | sed -n 's/^Created //p')
+requirely add      "$ID" ./brief.txt    --provider fake --script $F/roomly.json
+requirely turn     "$ID"                --provider fake --script $F/roomly.json
+requirely answer   "$ID" --auto         --provider fake --script $F/roomly-settle.json
+requirely generate "$ID" --target srs   --provider fake --script $F/roomly-settle.json
 ```
 
 `session.test.ts` runs the equivalent in **one** process, where `roomly.json`

@@ -63,7 +63,7 @@ them, which is where you *will* hit them. This is the version you read on purpos
   braces". Candidates must actually parse, and the longest parsing one wins —
   prose can contain `{}`, which parses fine and is never the answer.
 - **An unrecognised `providerOptions` key is dropped silently by the AI SDK.**
-  `adapters/ai/openai.ts` passed `{ openai: { structuredOutputs: … } }` for months.
+  `adapters/ai/openai.ts` passed `{ openai: { structuredOutputs: … } }` for three weeks.
   That key does not exist in `@ai-sdk/openai` — the real one is
   `strictJsonSchema` — and nothing warned, so the `tool` rung of the generation
   ladder sent a request byte-identical to `constrained` and the ladder had no

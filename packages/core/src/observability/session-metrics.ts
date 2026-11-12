@@ -63,10 +63,9 @@ export interface SessionMetrics {
   /**
    * How often the user took the option Requirely suggested.
    *
-   * **The anchoring instrument.** Defaults in AI decision support are documented
-   * as strong anchors — one clinical survey found 88% of residents had
-   * encountered the effect — so a rate near 1.0 is the signal that Requirely
-   * stopped offering a choice and started making it, dressed as advice.
+   * **The anchoring instrument.** A suggested option is a strong anchor, so a
+   * rate near 1.0 is the signal that Requirely stopped offering a choice and
+   * started making it, dressed as advice.
    *
    * Null when no question carried a recommendation: a rate over zero offers is
    * not 0%, it is undefined, and reporting it as 0% would read as "the user

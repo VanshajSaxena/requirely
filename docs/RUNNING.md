@@ -113,13 +113,19 @@ empty script, so the first call fails. See
 [`apps/cli/fixtures/README.md`](../apps/cli/fixtures/README.md) for why there are
 two fixture files.
 
+The reverse also holds: `--script` needs `--provider fake` beside it. Without
+it, every command still loads the provider configured in `.env` and, on a fresh
+clone with no API key, stops before doing anything.
+
 ```sh
-ID=$(requirely new --title Roomly --script apps/cli/fixtures/roomly.json | sed -n 's/^Created //p')
+F=apps/cli/fixtures
+ID=$(requirely new --title Roomly --provider fake --script $F/roomly.json | sed -n 's/^Created //p')
 echo "I want to see what rooms are free and book one." > /tmp/brief.txt
-requirely add    "$ID" /tmp/brief.txt   --script apps/cli/fixtures/roomly.json
-requirely turn   "$ID"                  --script apps/cli/fixtures/roomly.json
-requirely answer "$ID" --auto           --script apps/cli/fixtures/roomly-settle.json
-requirely generate "$ID" --target srs   --script apps/cli/fixtures/roomly-settle.json
+requirely add      "$ID" /tmp/brief.txt  --provider fake --script $F/roomly.json
+requirely turn     "$ID"                 --provider fake --script $F/roomly.json
+requirely answer   "$ID" --auto          --provider fake --script $F/roomly-settle.json
+requirely status   "$ID"                 --provider fake
+requirely generate "$ID" --target srs    --provider fake --script $F/roomly-settle.json
 ```
 
 `--auto` takes the first option every time. It proves the pipeline and nothing

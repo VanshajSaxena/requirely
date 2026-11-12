@@ -132,10 +132,9 @@ export const QuestionShape = z.object({
    * The option Requirely would choose, if it had to.
    *
    * **A separate field precisely so a UI can withhold it.** Pre-selecting an
-   * option anchors: defaults in AI decision support are documented as strong
-   * anchors, and one clinical survey found 88% of residents had encountered the
-   * effect. Keeping the recommendation out of the option list means a surface can
-   * show the choice first and the opinion second, or not at all — and the eval
+   * option anchors: a pre-selected default is a textbook anchor. Keeping the
+   * recommendation out of the option list means a surface can show the choice
+   * first and the opinion second, or not at all — and the eval
    * suite tracks acceptance rate, because a suspiciously high one is the signal
    * that Requirely stopped offering a choice and started making it.
    *

@@ -20,3 +20,7 @@ next-env.d.ts
 
 # Run payloads: full prompts and model output, written on every turn.
 .requirely/
+
+# Per-machine Claude Code permissions. Ignored globally on the author's machine,
+# listed here so a clone elsewhere cannot commit one by accident.
+.claude/settings.local.json

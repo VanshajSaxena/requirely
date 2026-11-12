@@ -166,12 +166,12 @@ structural rather than aspirational:
   obviously adds capture burden, and burden is the documented reason it was not
   adopted.
 - **`recommends` / `because` are separate fields precisely so a UI can withhold
-  them.** Pre-selecting an option anchors — one clinical survey found 88% of
-  residents had encountered the effect from AI decision support — so a surface can
-  show the choice first and the opinion second, or not at all. Choosing against
-  the recommendation is an ordinary answer that nothing in the domain penalises,
-  and the eval suite tracks acceptance rate because a suspiciously high one is the
-  signal that Requirely stopped offering a choice and started making it.
+  them.** Pre-selecting an option anchors — a pre-selected default is a textbook
+  anchor — so a surface can show the choice first and the opinion second, or not
+  at all. Choosing against the recommendation is an ordinary answer that nothing
+  in the domain penalises, and the eval suite tracks acceptance rate because a
+  suspiciously high one is the signal that Requirely stopped offering a choice
+  and started making it.
 
 `QuestionOption.settles` earns its place by being read: the engine unions it with
 `Question.about` when building the settlement map, so one question can close
@@ -726,7 +726,7 @@ have no tackle-or-defer answer, and leaving them on a backlog quietly invites
 someone to "fix" something that is behaving as designed. They are still real
 things that will surprise a user — that is why they are written down at all.
 
-- **`decisions[] ` never shrinks.** A superseded Decision is marked, never
+- **`decisions[]` never shrinks.** A superseded Decision is marked, never
   removed. This is the ADR rule taken literally: *the trail of supersessions is
   the architectural history of the system*, so pruning it would be pruning the
   audit trail. It is the same unbounded-growth shape as the `Understanding`
