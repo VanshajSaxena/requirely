@@ -48,6 +48,29 @@ describe('describeError', () => {
     expect(describeError(undefined)).toBe('undefined');
   });
 
+  it('keeps a config error readable: its issues are sentences, not Zod issues', () => {
+    // Shaped like core's ConfigError. Reading these strings as Zod issues printed
+    // "(value): invalid" for a missing API key, the first thing a fresh clone hits.
+    const missingKey =
+      'ANTHROPIC_API_KEY is required because reasoning uses the "anthropic" provider';
+    const config = Object.assign(new Error(`Invalid configuration:\n  - ${missingKey}`), {
+      issues: [missingKey],
+    });
+
+    const described = describeError(config);
+    expect(described).toBe(`Invalid configuration:\n  - ${missingKey}`);
+    expect(described).not.toContain('(value): invalid');
+  });
+
+  it('prints a string issue as it is inside a mixed list', () => {
+    const mixed = Object.assign(new Error('dump'), {
+      issues: ['DATABASE_URL is not a URL', { path: ['ops', 0], message: 'bad' }],
+    });
+    const described = describeError(mixed);
+    expect(described).toContain('  DATABASE_URL is not a URL');
+    expect(described).toContain('ops.0: bad');
+  });
+
   it('is not fooled by an error whose `issues` is not a list', () => {
     const odd = Object.assign(new Error('real message'), { issues: 'not an array' });
     expect(describeError(odd)).toBe('real message');

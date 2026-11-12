@@ -146,8 +146,7 @@ export function renderSources(sources: readonly Source[]): string {
  * This is the anchoring mitigation made concrete. `@clack/prompts`' `select`
  * takes an `initialValue`; pointing it at `Question.recommends` would put the
  * cursor on our opinion and make every other option a deliberate move away from
- * it — precisely the documented effect, where one clinical survey found 88% of
- * residents had encountered anchoring from AI decision support.
+ * it — the textbook anchoring effect of a pre-selected default.
  *
  * So the user reads the choices, then reads what we would do and why. Choosing
  * against it costs nothing, and nothing in the system records it as a deviation.
@@ -219,14 +218,22 @@ export const dialsLine = (temperament: Temperament): string =>
  *
  * Duck-typed on `issues` rather than `instanceof ZodError`, because `apps/cli`
  * does not depend on zod and should not start in order to format an error.
+ *
+ * Core's `ConfigError` also carries `issues`, but as plain sentences, and its
+ * message is already those sentences. Reading them as Zod issues turned a
+ * missing API key into "(value): invalid" on a fresh clone, so an error whose
+ * issues are all strings keeps its own message, and a stray string issue in a
+ * mixed list is printed as it is.
  */
 export function describeError(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
 
   const issues = (error as { issues?: unknown }).issues;
   if (!Array.isArray(issues) || issues.length === 0) return error.message;
+  if (issues.every((issue) => typeof issue === 'string')) return error.message;
 
   const lines = issues.slice(0, 5).map((raw) => {
+    if (typeof raw === 'string') return `  ${raw}`;
     const issue = raw as { path?: readonly unknown[]; message?: string };
     const where = (issue.path ?? []).join('.');
     return `  ${where === '' ? '(value)' : where}: ${issue.message ?? 'invalid'}`;
